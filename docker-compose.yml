@@ -1,0 +1,85 @@
+version: "3.8"
+
+services:
+  # Zeno API Service
+  zeno-api:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://zeno:zeno_password@postgres:5432/zeno_db
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./credentials:/app/credentials
+      - ./logs:/app/logs
+    networks:
+      - zeno-network
+
+  # Zeno Agent Service
+  zeno-agent:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.agent
+    environment:
+      - DATABASE_URL=postgresql://zeno:zeno_password@postgres:5432/zeno_db
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./credentials:/app/credentials
+      - ./logs:/app/logs
+    networks:
+      - zeno-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: zeno_db
+      POSTGRES_USER: zeno
+      POSTGRES_PASSWORD: zeno_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deployment/docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - zeno-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - zeno-network
+
+  # Nginx Reverse Proxy (Optional)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployment/docker/nginx.conf:/etc/nginx/nginx.conf
+      - ./deployment/docker/ssl:/etc/ssl
+    depends_on:
+      - zeno-api
+    networks:
+      - zeno-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  zeno-network:
+    driver: bridge

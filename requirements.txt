@@ -1,0 +1,45 @@
+# Core LiveKit and AI Agent Dependencies
+livekit-agents[deepgram,openai,cartesia,silero,turn-detector]~=1.2
+livekit-plugins-noise-cancellation~=0.2
+
+# Web Framework and API
+fastapi~=0.115.0
+uvicorn[standard]~=0.32.0
+pydantic~=2.10.0
+python-multipart~=0.0.12
+
+# Database and Storage
+sqlalchemy~=2.0.35
+alembic~=1.14.0
+psycopg2-binary~=2.9.9
+redis~=5.2.0
+
+# Authentication and Security
+pyjwt~=2.9.0
+passlib[bcrypt]~=1.7.4
+python-jose[cryptography]~=3.3.0
+
+# Google Workspace Integration
+google-auth~=2.31.0
+google-auth-oauthlib~=1.2.0
+google-api-python-client~=2.139.0
+
+# Weather and Location Services
+requests~=2.32.0
+python-dotenv~=1.0.0
+
+# iOS Push Notifications
+pyfcm~=1.5.4
+
+# Development and Testing
+pytest~=8.3.0
+pytest-asyncio~=0.25.0
+black~=24.10.0
+flake8~=7.1.0
+mypy~=1.13.0
+
+# Utilities
+python-dateutil~=2.9.0
+pytz~=2024.2
+httpx~=0.28.0
+aiofiles~=24.1.0
