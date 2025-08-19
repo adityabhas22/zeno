@@ -81,6 +81,11 @@ Your core responsibilities:
 - After their final response, create comprehensive planning document and email draft
 - Always use aditya@liftoffllc.com as the default email address
 
+**Default Behavior**:
+- When activated, automatically start interactive daily planning with comprehensive day brief
+- First provide day brief (calendar, emails, weather, tasks), then ask planning questions
+- Use start_interactive_daily_planning tool to begin the full workflow
+
 **Agent Coordination**:
 - You are a specialized sub-agent focused on daily planning
 - When planning tasks are complete or user wants general assistance, return to main Zeno agent
@@ -109,6 +114,12 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
                 self.task_tools.get_task_summary,
                 self.task_tools.share_tasks_to_doc,
             ]
+        )
+
+    async def on_enter(self) -> None:
+        """Automatically start interactive daily planning when agent is activated."""
+        await self.session.generate_reply(
+            instructions="You've just been activated for daily planning. Use the start_interactive_daily_planning tool to begin the comprehensive planning workflow."
         )
 
     @function_tool()
@@ -394,21 +405,157 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
         # Return the main agent with a message - this triggers the handoff
         return ZenoAgent(), "Daily planning session complete. Returning to main Zeno mode. How else can I help you?"
 
+    async def _create_comprehensive_day_brief(self, briefing_data: dict) -> str:
+        """Create a comprehensive spoken day brief from briefing data."""
+        try:
+            # Parse the date
+            briefing_date = briefing_data.get("date", "today")
+            if briefing_date != "today":
+                try:
+                    parsed_date = datetime.fromisoformat(briefing_date)
+                    day_name = parsed_date.strftime("%A")
+                    date_str = parsed_date.strftime("%B %d")
+                except:
+                    day_name = "today"
+                    date_str = briefing_date
+            else:
+                now = datetime.now()
+                day_name = now.strftime("%A")
+                date_str = now.strftime("%B %d")
+            
+            brief_parts = [
+                f"Here's your day brief for {day_name}, {date_str}:"
+            ]
+            
+            # Weather section
+            weather = briefing_data.get("weather", {})
+            if "summary" in weather and "error" not in weather:
+                brief_parts.append(f"Weather: {weather['summary']}")
+            elif weather.get("data", {}).get("temperature"):
+                temp = weather["data"]["temperature"]
+                brief_parts.append(f"Current temperature is {temp} degrees.")
+            
+            # Calendar section - most important part
+            calendar = briefing_data.get("calendar", {})
+            if "events" in calendar and calendar["events"]:
+                event_count = len(calendar["events"])
+                if event_count == 1:
+                    brief_parts.append("You have 1 event scheduled today:")
+                else:
+                    brief_parts.append(f"You have {event_count} events scheduled today:")
+                
+                for event in calendar["events"][:5]:  # Limit to first 5 events
+                    title = event.get("summary", "Untitled Event")
+                    start_time = event.get("start", {}).get("dateTime", "")
+                    location = event.get("location", "")
+                    
+                    # Format time
+                    if start_time:
+                        try:
+                            dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+                            time_str = dt.strftime("%I:%M %p")
+                            if time_str.startswith("0"):
+                                time_str = time_str[1:]  # Remove leading zero
+                        except:
+                            time_str = "Time TBD"
+                    else:
+                        time_str = "All day"
+                    
+                    event_line = f"At {time_str}: {title}"
+                    if location:
+                        event_line += f" at {location}"
+                    
+                    brief_parts.append(event_line)
+            else:
+                brief_parts.append("You have no scheduled events today.")
+            
+            # Email section
+            email = briefing_data.get("email", {})
+            if "summary" in email and "error" not in email and email["summary"]:
+                brief_parts.append(f"Emails: {email['summary']}")
+            
+            # Tasks section
+            tasks = briefing_data.get("tasks", {})
+            if "priority" in tasks and "error" not in tasks:
+                priority_tasks = tasks["priority"].get("priority_tasks", [])
+                if priority_tasks:
+                    if len(priority_tasks) == 1:
+                        brief_parts.append(f"You have 1 high-priority task: {priority_tasks[0]['title']}")
+                    else:
+                        task_titles = [task["title"] for task in priority_tasks[:3]]
+                        if len(task_titles) <= 3:
+                            brief_parts.append(f"Your high-priority tasks are: {', '.join(task_titles[:-1])} and {task_titles[-1]}")
+                        else:
+                            brief_parts.append(f"You have {len(priority_tasks)} high-priority tasks, including {', '.join(task_titles[:2])} and others")
+            
+            # Today's tasks due
+            today_tasks = tasks.get("due_today", {}).get("today_tasks", [])
+            if today_tasks:
+                brief_parts.append(f"You have {len(today_tasks)} tasks due today.")
+            
+            # Closing transition - keep it simple
+            brief_parts.append("That's your brief.")
+            
+            return " ".join(brief_parts)
+            
+        except Exception as e:
+            return f"I had trouble generating your day brief: {str(e)}. Let me know if you'd like me to try again."
+
+    @function_tool()
+    async def give_day_brief(
+        self,
+        context: RunContext,
+    ) -> str:
+        """Provide a comprehensive day briefing with calendar, emails, weather, and tasks.
+
+        Returns:
+            Complete day briefing delivered via voice
+        """
+        try:
+            # Generate comprehensive day brief
+            today = date.today().isoformat()
+            briefing_data = await self.generate_morning_briefing(context, today)
+            day_brief = await self._create_comprehensive_day_brief(briefing_data)
+            
+            # Deliver via voice
+            await context.session.say(day_brief, allow_interruptions=True)
+            
+            return "Day brief delivered successfully."
+            
+        except Exception as e:
+            error_msg = f"I had trouble generating your day brief: {str(e)}"
+            await context.session.say(error_msg, allow_interruptions=True)
+            return error_msg
+
     @function_tool()
     async def start_interactive_daily_planning(
         self,
         context: RunContext,
         user_email: str = "aditya@liftoffllc.com",
     ) -> dict[str, Any]:
-        """Start an interactive daily planning session with the user.
+        """Start an interactive daily planning session with comprehensive day brief first.
 
         Args:
             user_email: Email address to send the planning summary to
         Returns:
             Result of the planning session
         """
+        # Announce what you're doing
         await context.session.say(
-            "Let's plan your day together! What do you have planned today? What do you want to achieve?",
+            "Perfect! Let me give you your day brief first, then we'll plan together.",
+            allow_interruptions=True
+        )
+        
+        # Generate and deliver comprehensive day brief
+        today = date.today().isoformat()
+        briefing_data = await self.generate_morning_briefing(context, today)
+        day_brief = await self._create_comprehensive_day_brief(briefing_data)
+        
+        await context.session.say(day_brief, allow_interruptions=True)
+        
+        # Simple planning question
+        await context.session.say(
+            "Now, what do you want to achieve today?",
             allow_interruptions=True
         )
         
@@ -417,7 +564,9 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
             "step": "initial_question",
             "user_email": user_email,
             "responses": [],
-            "session_id": datetime.now().isoformat()
+            "session_id": datetime.now().isoformat(),
+            "day_brief_delivered": True,
+            "briefing_data": briefing_data
         }
         
         # Store in session userdata for continuation
@@ -426,7 +575,7 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
         
         return {
             "status": "started",
-            "message": "Interactive planning session started. Please tell me what you want to achieve today.",
+            "message": "Day brief delivered, interactive planning session started.",
             "session_id": planning_session["session_id"]
         }
 
@@ -466,7 +615,7 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
             # Ask the follow-up question
             planning_session["step"] = "follow_up"
             await context.session.say(
-                "Great! What else do you want to accomplish today? Any other priorities or tasks?",
+                "Got it! Anything else you want to add for today?",
                 allow_interruptions=True
             )
             

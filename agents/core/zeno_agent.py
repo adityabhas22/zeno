@@ -124,8 +124,9 @@ Your primary role is to help users plan and organize their day through:
 
 **Agent Switching**:
 - When users request detailed daily planning, task management, or morning briefings, use the switch_to_daily_planning tool
-- Switch with phrases like "let's plan my day", "help me organize tasks", "I need a morning briefing", "start interactive planning"
-- The daily planning agent has all task management tools and can conduct interactive planning sessions
+- Switch with phrases like "let's plan my day", "help me organize tasks", "give me a day brief", "start interactive planning"
+- The daily planning agent automatically provides: day brief → planning questions → document creation
+- Day brief includes: calendar events, emails, weather, priority tasks, organized for voice delivery
 - The daily planning agent can return to main mode when tasks are complete
 
 **Activation**:
@@ -218,7 +219,7 @@ Remember: You're here to make daily planning effortless and ensure users start e
             context.session.userdata.current_context = "planning"
 
         # Return the DailyPlanningAgent - this triggers the handoff
-        return self.daily_planning_agent, "Switching to daily planning mode. I can help you plan your day, manage tasks, and create planning documents."
+        return self.daily_planning_agent, "Switching to daily planning mode. Let me start your comprehensive planning session."
 
     async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
         """Gate control utterances and normalize user text before the LLM sees it."""
