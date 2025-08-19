@@ -1,5 +1,5 @@
 # Core LiveKit and AI Agent Dependencies
-livekit-agents[deepgram,openai,cartesia,silero,turn-detector]~=1.2
+livekit-agents[deepgram,openai,cartesia,silero]~=1.0
 livekit-plugins-noise-cancellation~=0.2
 
 # Web Framework and API

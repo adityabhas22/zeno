@@ -8,12 +8,23 @@ Renamed and enhanced from the original Jarvis implementation.
 import asyncio
 import json
 import re
+import sys
+from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 
+
+# Add project root to Python path to allow imports from any location
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# Load environment variables first
+from dotenv import load_dotenv
+load_dotenv()
+
 from livekit import agents
 from livekit.agents import Agent, AgentSession, StopResponse, RoomInputOptions
-from livekit.agents.voice import ChatContext, ChatMessage
+from livekit.agents import ChatContext, ChatMessage
 from livekit.plugins import openai, deepgram, cartesia, silero, noise_cancellation
 
 from config.settings import get_settings
@@ -51,8 +62,32 @@ class ZenoAgent(Agent):
         self.daily_planning_agent = DailyPlanningAgent()
         self.briefing_workflow = MorningBriefingWorkflow()
         
+        # Collect all tools before calling super().__init__
+        all_tools = []
+        
+        # Add Google Workspace tools
+        all_tools.extend(get_workspace_tools())
+        
+        # Add daily planning tools (excluding problematic format_briefing_for_voice)
+        all_tools.extend([
+            self.daily_planning_agent.generate_morning_briefing,
+            self.daily_planning_agent.deliver_morning_briefing,
+            self.daily_planning_agent.check_schedule_conflicts,
+            self.daily_planning_agent.suggest_optimal_meeting_time,
+            self.daily_planning_agent.plan_daily_tasks,
+        ])
+        
+        # Note: Real-time IST context will be provided through agent instructions
+        
         super().__init__(
-            instructions=f"""You are Zeno, an AI-powered daily planning assistant.
+            instructions="""You are Zeno, an AI-powered daily planning assistant.
+
+**CRITICAL TIME ZONE INSTRUCTIONS:**
+- Today's date is August 20, 2025 (Tuesday) in Indian Standard Time (IST, UTC+05:30)
+- ALWAYS use IST timezone (+05:30) for all calendar events
+- Format calendar event times as: YYYY-MM-DDTHH:mm:ss+05:30
+- When users say "today" = 2025-08-20, "tomorrow" = 2025-08-21
+- Default event duration is 1 hour unless specified otherwise
 
 Your primary role is to help users plan and organize their day through:
 
@@ -73,6 +108,7 @@ Your primary role is to help users plan and organize their day through:
    - Meeting preparation and summaries
    - Time blocking for important tasks
    - Travel time and location planning
+   - **ALWAYS use IST timezone (+05:30) for all calendar events**
 
 4. **Proactive Communication**: 
    - Call users at scheduled times for briefings
@@ -94,57 +130,65 @@ Your primary role is to help users plan and organize their day through:
 
 Remember: You're here to make daily planning effortless and ensure users start each day prepared and organized.
 """,
-            max_tool_steps=settings.agent_max_tool_steps,
-            preemptive_generation=settings.agent_preemptive_generation,
-            allow_interruptions=settings.agent_allow_interruptions,
+            tools=all_tools,
         )
-        
-        # Add Google Workspace tools
-        self.tools.extend(get_workspace_tools())
-        
-        # Add daily planning tools
-        self.tools.extend([
-            self.daily_planning_agent.generate_morning_briefing,
-            self.daily_planning_agent.deliver_morning_briefing,
-            self.daily_planning_agent.check_schedule_conflicts,
-            self.daily_planning_agent.suggest_optimal_meeting_time,
-            self.daily_planning_agent.plan_daily_tasks,
-        ])
+
+
+    def _normalize(self, text: str) -> str:
+        """Lowercase and collapse punctuation to spaces for robust matching."""
+        t = text.lower()
+        t = re.sub(r"[\s,;:._\-]+", " ", t).strip()
+        return t
 
     def _is_activation(self, text: str) -> bool:
         """Check if text contains Zeno activation phrases."""
-        activation_patterns = [
-            r"^(?:hey\s+)?zeno\b",
-            r"^zeno\b",
-            r"\bzeno\s*(?:are\s+you\s+there|wake\s+up|listen)\b"
-        ]
-        return any(re.search(pattern, text, re.IGNORECASE) for pattern in activation_patterns)
+        t = self._normalize(text)
+        return any(
+            phrase in t
+            for phrase in [
+                "zeno in",
+                "come in",
+                "join",
+                "step in",
+                "hey zeno",
+                "wake",        # Added simple wake command
+                "wake up",     # Added wake up command
+            ]
+        )
 
     def _is_deactivation(self, text: str) -> bool:
         """Check if text contains Zeno deactivation phrases."""
-        deactivation_patterns = [
-            r"\b(?:that'?s\s+all|goodbye|good\s*bye)\s*zeno\b",
-            r"\bzeno\s*(?:stop|sleep|deactivate|turn\s+off)\b",
-            r"^(?:that'?s\s+all|goodbye|good\s*bye|stop|end|finish)$"
-        ]
-        return any(re.search(pattern, text, re.IGNORECASE) for pattern in deactivation_patterns)
+        t = self._normalize(text)
+        return any(
+            phrase in t
+            for phrase in [
+                "zeno out",
+                "leave",
+                "dismiss", 
+                "stand down",
+                "that's all",
+                "goodbye",
+                "stop",
+            ]
+        )
 
     def _extract_one_shot(self, text: str) -> Optional[str]:
         """Extract one-shot command if present."""
-        one_shot_patterns = [
-            r"^(?:hey\s+)?zeno[,\s]+(.+)$",
-            r"^zeno[,\s]+(.+)$"
-        ]
-        
-        for pattern in one_shot_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-        return None
+        # Accept variations like "Hey, Zeno -- do X", "Zeno: do X", "Zeno do X"
+        # Normalize punctuation and allow common misspellings
+        t = self._normalize(text)
+        # fast exit if zeno not present
+        if not re.match(r"^(hey\s+)?zeno\b", t):
+            return None
+        # strip the vocative prefix
+        tail = re.sub(r"^(hey\s+)?zeno\b\s*", "", t).strip()
+        if not tail or self._is_activation(text) or self._is_deactivation(text):
+            return None
+        return tail
 
     def _maybe_strip_zeno_prefix(self, text: str) -> str:
         """Remove Zeno vocative prefix from text."""
-        return re.sub(r"^(?:hey\s+)?(?:zeno|zeno)\b\s*", "", text, flags=re.IGNORECASE)
+        return re.sub(r"^(?:hey\s+)?zeno\b\s*", "", text, flags=re.IGNORECASE)
 
     async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
         """Gate control utterances and normalize user text before the LLM sees it."""
@@ -160,9 +204,6 @@ Remember: You're here to make daily planning effortless and ensure users start e
             user_data = getattr(self.session, "userdata", None)
             if user_data is not None:
                 user_data.zeno_active = False  # type: ignore[attr-defined]
-            await self.session.generate_reply(
-                instructions="Acknowledge the deactivation politely and briefly."
-            )
             raise StopResponse()
 
         # 3) Determine current activation state
@@ -180,9 +221,6 @@ Remember: You're here to make daily planning effortless and ensure users start e
         if self._is_activation(raw_text):
             if user_data is not None:
                 user_data.zeno_active = True  # type: ignore[attr-defined]
-            await self.session.generate_reply(
-                instructions="Greet the user as Zeno and ask how you can help with their daily planning."
-            )
             raise StopResponse()
 
         # 6) If still idle (and not a one-shot), do nothing this turn
@@ -221,9 +259,9 @@ async def entrypoint(ctx: agents.JobContext):
     target_identity: Optional[str] = None
 
     session = AgentSession(
-        stt=deepgram.STT(model="nova-2", language="en"),
-        llm=openai.LLM(model="gpt-4o-mini"),
-        tts=cartesia.TTS(model="sonic-english", voice="79a125e8-cd45-4c13-8a67-188112f4dd22"),  # Professional voice
+        stt=deepgram.STT(model="nova-3", language="en"),
+        llm=openai.LLM(model="gpt-5"),
+        tts=deepgram.TTS(model="aura-2-thalia-en"),
         vad=silero.VAD.load(),
         turn_detection="vad",
         max_tool_steps=settings.agent_max_tool_steps,
@@ -252,14 +290,20 @@ async def entrypoint(ctx: agents.JobContext):
         except Exception as e:
             print(f"Error in handle_call_end: {e}")
 
+    # Build room input options
+    room_options = RoomInputOptions(
+        # Enhanced noise cancellation for better voice quality
+        noise_cancellation=noise_cancellation.BVCTelephony(),
+    )
+    
+    # Only set participant_identity if we have a target
+    if target_identity is not None:
+        room_options.participant_identity = target_identity
+
     await session.start(
         room=ctx.room,
         agent=ZenoAgent(),
-        room_input_options=RoomInputOptions(
-            # Enhanced noise cancellation for better voice quality
-            noise_cancellation=noise_cancellation.BVCTelephony(),
-            participant_identity=target_identity,  # None allows any participant
-        ),
+        room_input_options=room_options,
     )
 
     # Customize greeting based on call purpose
@@ -285,4 +329,9 @@ async def entrypoint(ctx: agents.JobContext):
 
 
 if __name__ == "__main__":
-    agents.cli.run_app(entrypoint)
+    agents.cli.run_app(agents.WorkerOptions(
+        entrypoint_fnc=entrypoint,
+
+        # agent_name is required for explicit dispatch
+        agent_name="my-telephony-agent"
+    ))

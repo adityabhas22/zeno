@@ -17,7 +17,7 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm]
         )
-        user_id: str = payload.get("sub")
+        user_id = payload.get("sub")
         if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
