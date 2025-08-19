@@ -39,8 +39,9 @@ class CalendarTools:
 
         Args:
             title: Event title
-            start_iso: ISO 8601 start datetime (e.g. 2025-08-11T15:00:00-07:00)
-            end_iso: ISO 8601 end datetime
+            start_iso: ISO 8601 start datetime (e.g. 2025-08-21T13:00:00 or 2025-08-21T13:00:00-07:00)
+                      If no timezone specified, Pacific Time will be assumed
+            end_iso: ISO 8601 end datetime (same format as start_iso)
             attendees_emails: List of attendee emails
             location: Optional location
             description: Optional description
@@ -95,7 +96,12 @@ class CalendarTools:
         start_iso: str,
         end_iso: str,
     ) -> dict[str, Any]:
-        """Check for calendar conflicts when scheduling new events."""
+        """Check for calendar conflicts when scheduling new events.
+        
+        Args:
+            start_iso: ISO 8601 start datetime (e.g. 2025-08-21T13:00:00)
+            end_iso: ISO 8601 end datetime
+        """
         conflicts = self.calendar_service.check_conflicts(start_iso, end_iso)
         
         return {

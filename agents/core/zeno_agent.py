@@ -10,8 +10,8 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Optional, Any, Dict, Tuple
-from dataclasses import dataclass
+from typing import Optional, Any, Dict, Tuple, List
+from dataclasses import dataclass, field
 
 
 # Add project root to Python path to allow imports from any location
@@ -44,6 +44,13 @@ class ZenoState:
     current_context: str = "general"  # "briefing", "planning", "general"
     current_agent: str = "zeno"  # "zeno", "daily_planning"
     planning_session: Optional[Dict[str, Any]] = None  # Store interactive planning session data
+    
+    # Enhanced context sharing between agents
+    last_briefing_data: Optional[Dict[str, Any]] = None  # Last morning briefing data
+    conversation_history: List[str] = field(default_factory=list)  # Key conversation points
+    current_goals: List[str] = field(default_factory=list)  # User's stated goals for the day
+    created_documents: List[Dict[str, Any]] = field(default_factory=list)  # Documents created this session
+    pending_tasks: List[str] = field(default_factory=list)  # Tasks mentioned but not yet processed
 
 
 class ZenoAgent(Agent):
@@ -218,8 +225,34 @@ Remember: You're here to make daily planning effortless and ensure users start e
             context.session.userdata.current_agent = "daily_planning"
             context.session.userdata.current_context = "planning"
 
+        # Store context for handoff
+        if hasattr(context.session, 'userdata') and context.session.userdata:
+            context.session.userdata.conversation_history.append("Switched to daily planning mode")
+        
         # Return the DailyPlanningAgent - this triggers the handoff
         return self.daily_planning_agent, "Switching to daily planning mode. Let me start your comprehensive planning session."
+
+    @function_tool()
+    async def get_session_context(
+        self,
+        context: RunContext,
+    ) -> dict[str, Any]:
+        """Get current session context and conversation state.
+
+        Returns:
+            Complete session context for agent coordination
+        """
+        if hasattr(context.session, 'userdata') and context.session.userdata:
+            return {
+                "current_agent": context.session.userdata.current_agent,
+                "current_context": context.session.userdata.current_context,
+                "conversation_history": context.session.userdata.conversation_history,
+                "current_goals": context.session.userdata.current_goals,
+                "created_documents": context.session.userdata.created_documents,
+                "pending_tasks": context.session.userdata.pending_tasks,
+                "last_briefing_available": context.session.userdata.last_briefing_data is not None
+            }
+        return {"error": "No session context available"}
 
     async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
         """Gate control utterances and normalize user text before the LLM sees it."""
@@ -316,10 +349,10 @@ async def entrypoint(ctx: agents.JobContext):
         if hasattr(session, 'userdata') and session.userdata:
             session.userdata.zeno_active = False
         # Handle cleanup with enhanced Zeno features
-        try:
-            handle_call_end(session, participant)
-        except Exception as e:
-            print(f"Error in handle_call_end: {e}")
+        #try:
+        #    handle_call_end(session, participant)
+        #except Exception as e:
+        #    print(f"Error in handle_call_end: {e}")
 
     # Build room input options
     room_options = RoomInputOptions(
@@ -364,5 +397,5 @@ if __name__ == "__main__":
         entrypoint_fnc=entrypoint,
 
         # agent_name is required for explicit dispatch
-        agent_name="my-telephony-agent"
+        #agent_name="my-telephony-agent"
     ))

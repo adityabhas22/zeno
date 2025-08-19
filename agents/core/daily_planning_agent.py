@@ -50,10 +50,11 @@ Your core responsibilities:
 
 2. **Calendar Management**: Help with:
    - Reviewing today's schedule
+   - Creating new calendar events and appointments
    - Checking for conflicts when scheduling new events
    - Suggesting optimal meeting times
    - Planning travel time between appointments
-   - Rescheduling conflicting events
+   - Listing and managing existing events
 
 3. **Task Planning**: Assist with:
    - Prioritizing daily tasks based on urgency and importance
@@ -113,6 +114,11 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
                 self.task_tools.delete_task,
                 self.task_tools.get_task_summary,
                 self.task_tools.share_tasks_to_doc,
+                # Calendar management tools
+                self.calendar_tools.create_calendar_event,
+                self.calendar_tools.list_calendar_events,
+                self.calendar_tools.check_calendar_conflicts,
+                self.calendar_tools.get_upcoming_events,
             ]
         )
 
@@ -402,8 +408,33 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
             context.session.userdata.current_agent = "zeno"
             context.session.userdata.current_context = "general"
         
+        # Update shared context before returning
+        if hasattr(context.session, 'userdata') and context.session.userdata:
+            context.session.userdata.conversation_history.append("Returned to main Zeno agent")
+        
         # Return the main agent with a message - this triggers the handoff
         return ZenoAgent(), "Daily planning session complete. Returning to main Zeno mode. How else can I help you?"
+
+    @function_tool()
+    async def get_shared_context(
+        self,
+        context: RunContext,
+    ) -> dict[str, Any]:
+        """Get shared context from the session for agent coordination.
+
+        Returns:
+            Shared context including goals, briefing data, and conversation history
+        """
+        if hasattr(context.session, 'userdata') and context.session.userdata:
+            return {
+                "current_goals": context.session.userdata.current_goals,
+                "conversation_history": context.session.userdata.conversation_history[-10:],  # Last 10 items
+                "last_briefing_data": context.session.userdata.last_briefing_data,
+                "created_documents": context.session.userdata.created_documents,
+                "pending_tasks": context.session.userdata.pending_tasks,
+                "current_agent": context.session.userdata.current_agent
+            }
+        return {"error": "No shared context available"}
 
     async def _create_comprehensive_day_brief(self, briefing_data: dict) -> str:
         """Create a comprehensive spoken day brief from briefing data."""
@@ -569,9 +600,11 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
             "briefing_data": briefing_data
         }
         
-        # Store in session userdata for continuation
+        # Store in session userdata for continuation and context sharing
         if hasattr(context.session, 'userdata') and context.session.userdata:
             context.session.userdata.planning_session = planning_session
+            context.session.userdata.last_briefing_data = briefing_data
+            context.session.userdata.conversation_history.append("Started interactive daily planning with day brief")
         
         return {
             "status": "started",
@@ -610,6 +643,11 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
             "response": user_response,
             "timestamp": datetime.now().isoformat()
         })
+        
+        # Store user goals in shared context
+        if hasattr(context.session, 'userdata') and context.session.userdata:
+            context.session.userdata.current_goals.append(user_response)
+            context.session.userdata.conversation_history.append(f"User goal: {user_response[:100]}...")
         
         if planning_session.get("step") == "initial_question" and not is_final_response:
             # Ask the follow-up question
@@ -686,6 +724,16 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
                 f"Your planning document is available at: {planning_doc['url']}",
                 allow_interruptions=True
             )
+            
+            # Store created documents in shared context
+            if hasattr(context.session, 'userdata') and context.session.userdata:
+                context.session.userdata.created_documents.append({
+                    "type": "daily_planning",
+                    "document": planning_doc,
+                    "email_draft": email_draft,
+                    "created_at": datetime.now().isoformat()
+                })
+                context.session.userdata.conversation_history.append("Created daily planning document and email draft")
             
             return {
                 "status": "completed",

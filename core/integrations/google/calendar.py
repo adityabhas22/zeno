@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Iterable, Optional, List, Dict, Any
+import pytz
 
 from .oauth import get_service
 
@@ -32,10 +33,14 @@ class CalendarService:
         calendar_id: str = "primary",
     ) -> Dict[str, Any]:
         """Create a calendar event."""
+        # Ensure timezone is included in datetime strings
+        start_dt = self._ensure_timezone(start_iso)
+        end_dt = self._ensure_timezone(end_iso)
+        
         event_body = {
             "summary": title,
-            "start": {"dateTime": start_iso},
-            "end": {"dateTime": end_iso},
+            "start": {"dateTime": start_dt},
+            "end": {"dateTime": end_dt},
         }
         
         if attendees_emails:
@@ -128,9 +133,13 @@ class CalendarService:
         calendar_id: str = "primary"
     ) -> List[Dict[str, Any]]:
         """Check for calendar conflicts in the given time range."""
+        # Ensure timezone is included in datetime strings
+        start_dt = self._ensure_timezone(start_iso)
+        end_dt = self._ensure_timezone(end_iso)
+        
         events = self.list_events(
-            time_min_iso=start_iso,
-            time_max_iso=end_iso,
+            time_min_iso=start_dt,
+            time_max_iso=end_dt,
             calendar_id=calendar_id,
             max_results=50
         )
@@ -142,8 +151,8 @@ class CalendarService:
             end_time = event.get("end", {}).get("dateTime")
             
             if start_time and end_time:
-                # Simple overlap check
-                if (start_time < end_iso and end_time > start_iso):
+                # Simple overlap check using the timezone-corrected strings
+                if (start_time < end_dt and end_time > start_dt):
                     conflicts.append(event)
         
         return conflicts
@@ -182,3 +191,30 @@ class CalendarService:
             summary_parts.append(f"...and {len(events) - 5} more events.")
         
         return "\n".join(summary_parts)
+    
+    def _ensure_timezone(self, datetime_str: str) -> str:
+        """Ensure datetime string has timezone information for Google Calendar API."""
+        if not datetime_str:
+            return datetime_str
+            
+        # If it already has timezone info (Z or offset), return as is
+        if datetime_str.endswith('Z') or '+' in datetime_str or datetime_str.endswith('+00:00'):
+            return datetime_str
+            
+        # If it's just ISO format without timezone, assume local timezone
+        try:
+            # Parse the datetime
+            dt = datetime.fromisoformat(datetime_str)
+            
+            # If it's naive (no timezone), assume user's local timezone
+            if dt.tzinfo is None:
+                # Use user's local timezone (fallback to UTC if needed)
+                local_tz = pytz.timezone('America/Los_Angeles')  # Default to PST for now
+                dt = local_tz.localize(dt)
+            
+            # Return in ISO format with timezone
+            return dt.isoformat()
+            
+        except ValueError:
+            # If parsing fails, try adding default timezone
+            return datetime_str + '-07:00'  # PST offset
