@@ -10,7 +10,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any, Dict, Tuple
 from dataclasses import dataclass
 
 
@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from livekit import agents
-from livekit.agents import Agent, AgentSession, StopResponse, RoomInputOptions
+from livekit.agents import Agent, AgentSession, StopResponse, RoomInputOptions, function_tool, RunContext
 from livekit.agents import ChatContext, ChatMessage
 from livekit.plugins import openai, deepgram, cartesia, silero, noise_cancellation
 
@@ -42,6 +42,8 @@ class ZenoState:
     session_start_time: Optional[str] = None
     daily_briefing_requested: bool = False
     current_context: str = "general"  # "briefing", "planning", "general"
+    current_agent: str = "zeno"  # "zeno", "daily_planning"
+    planning_session: Optional[Dict[str, Any]] = None  # Store interactive planning session data
 
 
 class ZenoAgent(Agent):
@@ -68,15 +70,6 @@ class ZenoAgent(Agent):
         # Add Google Workspace tools
         all_tools.extend(get_workspace_tools())
         
-        # Add daily planning tools (excluding problematic format_briefing_for_voice)
-        all_tools.extend([
-            self.daily_planning_agent.generate_morning_briefing,
-            self.daily_planning_agent.deliver_morning_briefing,
-            self.daily_planning_agent.check_schedule_conflicts,
-            self.daily_planning_agent.suggest_optimal_meeting_time,
-            self.daily_planning_agent.plan_daily_tasks,
-        ])
-        
         # Note: Real-time IST context will be provided through agent instructions
         
         super().__init__(
@@ -91,11 +84,12 @@ class ZenoAgent(Agent):
 
 Your primary role is to help users plan and organize their day through:
 
-1. **Morning Briefings**: Provide comprehensive daily overviews including:
+1. **Morning Briefings & Interactive Planning**: Provide comprehensive daily support including:
    - Today's calendar events and schedule
    - Weather and traffic conditions
    - Priority tasks and reminders
-   - Important updates or notifications
+   - Interactive daily planning sessions with goal-setting
+   - Automatic Google Docs creation and email drafting
 
 2. **Task Management**: Help users:
    - Add, modify, and prioritize daily tasks
@@ -110,7 +104,12 @@ Your primary role is to help users plan and organize their day through:
    - Travel time and location planning
    - **ALWAYS use IST timezone (+05:30) for all calendar events**
 
-4. **Proactive Communication**: 
+4. **Agent Delegation**: 
+   - Switch to specialized daily planning mode for focused task management
+   - Use daily planning agent for comprehensive briefings and task organization
+   - Return to main mode for general assistance
+
+5. **Proactive Communication**: 
    - Call users at scheduled times for briefings
    - Provide timely reminders and updates
    - Check in on task progress throughout the day
@@ -122,6 +121,12 @@ Your primary role is to help users plan and organize their day through:
 - Ask clarifying questions when needed
 - Maintain context throughout conversations
 - Adapt to user preferences and patterns
+
+**Agent Switching**:
+- When users request detailed daily planning, task management, or morning briefings, use the switch_to_daily_planning tool
+- Switch with phrases like "let's plan my day", "help me organize tasks", "I need a morning briefing", "start interactive planning"
+- The daily planning agent has all task management tools and can conduct interactive planning sessions
+- The daily planning agent can return to main mode when tasks are complete
 
 **Activation**:
 - Respond to "Hey Zeno" or "Zeno" for activation
@@ -189,6 +194,31 @@ Remember: You're here to make daily planning effortless and ensure users start e
     def _maybe_strip_zeno_prefix(self, text: str) -> str:
         """Remove Zeno vocative prefix from text."""
         return re.sub(r"^(?:hey\s+)?zeno\b\s*", "", text, flags=re.IGNORECASE)
+
+    @function_tool()
+    async def switch_to_daily_planning(
+        self,
+        context: RunContext,
+    ) -> Tuple[DailyPlanningAgent, str]:
+        """Switch to the specialized daily planning agent for comprehensive planning, task management, and briefings.
+
+        This agent can:
+        - Conduct interactive daily planning sessions
+        - Generate morning briefings with calendar and weather
+        - Manage tasks and priorities
+        - Create Google Docs with planning summaries
+        - Draft emails with daily plans
+        
+        Returns:
+            The DailyPlanningAgent instance (triggers agent handoff)
+        """
+        # Update state to track current agent
+        if hasattr(context.session, 'userdata') and context.session.userdata:
+            context.session.userdata.current_agent = "daily_planning"
+            context.session.userdata.current_context = "planning"
+
+        # Return the DailyPlanningAgent - this triggers the handoff
+        return self.daily_planning_agent, "Switching to daily planning mode. I can help you plan your day, manage tasks, and create planning documents."
 
     async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
         """Gate control utterances and normalize user text before the LLM sees it."""

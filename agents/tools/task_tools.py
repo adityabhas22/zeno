@@ -227,3 +227,54 @@ class TaskTools:
             summary_parts.append(f"{len(today_tasks)} tasks are due today.")
         
         return "\n".join(summary_parts)
+
+    @function_tool()
+    async def share_tasks_to_doc(
+        self,
+        context: RunContext,
+        include_all_tasks: bool = False,
+        doc_title: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Create a Google Doc with current tasks and todos.
+
+        Args:
+            include_all_tasks: Whether to include all tasks or just priority ones
+            doc_title: Custom title for the document
+        Returns:
+            Document creation result with URL
+        """
+        from datetime import date
+        from core.integrations.google.drive import DriveService
+        
+        try:
+            drive_service = DriveService()
+            
+            # Get tasks
+            if include_all_tasks:
+                all_tasks = await self.list_tasks(context, completed=False)
+                priority_tasks = [t for t in all_tasks if t.get("priority", 5) <= 2]
+            else:
+                priority_result = await self.get_priority_tasks(context)
+                priority_tasks = priority_result.get("priority_tasks", [])
+                all_tasks = priority_tasks
+            
+            # Create the document
+            today = date.today().isoformat()
+            doc_result = drive_service.create_task_summary_doc(
+                today, all_tasks, priority_tasks
+            )
+            
+            return {
+                "success": True,
+                "document": doc_result,
+                "total_tasks": len(all_tasks),
+                "priority_tasks": len(priority_tasks),
+                "message": f"Created task summary document: {doc_result['title']}"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to create task document: {str(e)}"
+            }

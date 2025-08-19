@@ -254,3 +254,64 @@ class MorningBriefingWorkflow:
             "next_briefing": f"Tomorrow at {briefing_time}",
             "message": f"Morning briefing scheduled for {briefing_time} daily."
         }
+    
+    async def create_comprehensive_daily_docs(
+        self,
+        context,
+        target_date: Optional[str] = None,
+        location: str = "current",
+    ) -> Dict[str, Any]:
+        """
+        Create comprehensive daily planning documents including briefing and tasks.
+        
+        Args:
+            context: Agent run context
+            target_date: Date for planning (defaults to today)
+            location: Location for weather/traffic info
+            
+        Returns:
+            Complete result with all created documents
+        """
+        if not target_date:
+            from datetime import date
+            target_date = date.today().isoformat()
+        
+        result = {
+            "target_date": target_date,
+            "created_documents": [],
+            "errors": []
+        }
+        
+        # Generate morning briefing and save to docs
+        try:
+            briefing_result = await self.generate_comprehensive_briefing(
+                context, target_date, location, save_to_docs=True
+            )
+            if "google_doc" in briefing_result:
+                result["created_documents"].append({
+                    "type": "briefing",
+                    "document": briefing_result["google_doc"]
+                })
+        except Exception as e:
+            result["errors"].append(f"Failed to create briefing document: {str(e)}")
+        
+        # Create task summary document
+        try:
+            task_tools = self.planning_agent.task_tools
+            task_doc_result = await task_tools.share_tasks_to_doc(
+                context, include_all_tasks=True
+            )
+            if task_doc_result.get("success"):
+                result["created_documents"].append({
+                    "type": "tasks",
+                    "document": task_doc_result["document"]
+                })
+        except Exception as e:
+            result["errors"].append(f"Failed to create task document: {str(e)}")
+        
+        # Summary
+        result["summary"] = f"Created {len(result['created_documents'])} documents for {target_date}"
+        if result["errors"]:
+            result["summary"] += f" with {len(result['errors'])} errors"
+        
+        return result
