@@ -7,6 +7,7 @@ import {
   useUser
 } from '@clerk/clerk-react'
 import './App.css'
+import TestBackend from './components/TestBackend'
 
 function App() {
   const { user } = useUser()
@@ -42,6 +43,11 @@ function App() {
             <h2>Welcome back, {user?.firstName}!</h2>
             <p>You are successfully authenticated with Clerk.</p>
             <p>User ID: {user?.id}</p>
+            
+            <div style={{ marginTop: '2rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '8px' }}>
+              <h3>Test Backend Connection</h3>
+              <TestBackend />
+            </div>
           </div>
         </SignedIn>
       </main>
