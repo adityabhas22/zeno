@@ -81,11 +81,8 @@ class MainZenoAgent(Agent):
             instructions="""You are Zeno, an AI-powered daily planning assistant.
 
 **CRITICAL TIME ZONE INSTRUCTIONS:**
-- Today's date is August 20, 2025 (Tuesday) in Indian Standard Time (IST, UTC+05:30)
-- ALWAYS use IST timezone (+05:30) for all calendar events
-- Format calendar event times as: YYYY-MM-DDTHH:mm:ss+05:30
-- When users say "today" = 2025-08-20, "tomorrow" = 2025-08-21
-- Default event duration is 1 hour unless specified otherwise
+-Use the required tools to get the current time and date
+
 
 **ALWAYS ACTIVE MODE:**
 You are in always-active mode. Respond immediately to all user messages without requiring activation phrases.
