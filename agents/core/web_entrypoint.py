@@ -7,7 +7,7 @@ Uses the MainZenoAgent which is always active (no come in/leave commands).
 
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 # Add project root to Python path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -23,6 +23,7 @@ from livekit.plugins import deepgram, openai, silero, noise_cancellation
 
 from config.settings import get_settings
 from agents.core.main_zeno_agent import MainZenoAgent, MainZenoState
+from core.storage import session_scope, UserSession, User
 
 
 async def web_entrypoint(ctx: agents.JobContext):
@@ -40,9 +41,45 @@ async def web_entrypoint(ctx: agents.JobContext):
     print(f"Connection type: web/API")
     print(f"Current participants: {len(ctx.room.remote_participants)}")
     
+    # Extract user context from participant metadata (set by token)
+    # Fallback to ctx.job.metadata if needed
+    user_ctx: Dict[str, Any] = {}
+    try:
+        # Try first remote participant's metadata
+        participants = ctx.room.remote_participants
+        if participants:
+            md = participants[0].metadata
+            if md:
+                import json as _json
+                user_ctx = _json.loads(md)
+        # Fallback to job metadata
+        if not user_ctx and ctx.job.metadata:
+            import json as _json
+            user_ctx = _json.loads(ctx.job.metadata)
+    except Exception:
+        user_ctx = {}
+
+    user_id = user_ctx.get("user_id")
+    session_id_from_token = user_ctx.get("session_id")
+    timezone = user_ctx.get("user_timezone")
+    preferences = user_ctx.get("user_preferences") or {}
+
+    # Validate user exists if provided
+    if user_id:
+        try:
+            with session_scope() as db:
+                db.query(User).filter(User.clerk_user_id == user_id).first()
+        except Exception:
+            pass
+
     # Use MainZenoAgent for web/API connections
     agent = MainZenoAgent()
-    userdata_state = MainZenoState()
+    userdata_state = MainZenoState(
+        user_id=user_id,
+        session_id=session_id_from_token,
+        timezone=timezone,
+        preferences=preferences,
+    )
     
     # Web-optimized room options
     room_options = RoomInputOptions(
@@ -71,12 +108,39 @@ async def web_entrypoint(ctx: agents.JobContext):
     @ctx.room.on("participant_connected")
     def on_participant_connected(participant):
         print(f"Participant {participant.identity} connected")
-        # MainZenoAgent is always active - no state changes needed
+        # Nothing special for always-active agent
 
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant):
         print(f"Participant {participant.identity} disconnected")
-        # MainZenoAgent doesn't have activation state
+        # Batch write chat history and end session if we have identifiers
+        try:
+            if getattr(session, "userdata", None) and session.userdata:
+                uid = getattr(session.userdata, "user_id", None)
+                sid = getattr(session.userdata, "session_id", None)
+                chat_buffer = getattr(session.userdata, "chat_buffer", [])
+                if uid and sid:
+                    from datetime import datetime
+                    from core.storage import ChatHistory
+                    with session_scope() as db:
+                        # Append buffered messages
+                        for m in chat_buffer:
+                            db.add(ChatHistory(
+                                user_id=uid,
+                                session_id=sid,
+                                message_type=m.get("message_type", "system"),
+                                content=m.get("content", ""),
+                                agent_type="main_zeno",
+                                message_metadata={},
+                                context_tags=[],
+                            ))
+                        # Mark session as ended
+                        db.query(UserSession).filter(UserSession.id == sid).update({
+                            "is_active": False,
+                            "ended_at": datetime.utcnow(),
+                        })
+        except Exception as _e:
+            print(f"Error finalizing session: {_e}")
 
     # Start the session
     await session.start(

@@ -35,6 +35,9 @@ from agents.workflows.morning_briefing import MorningBriefingWorkflow
 class MainZenoState:
     """State management for main Zeno agent sessions."""
     user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    timezone: Optional[str] = None
+    preferences: dict = field(default_factory=dict)
     session_start_time: Optional[str] = None
     daily_briefing_requested: bool = False
     current_context: str = "general"  # "briefing", "planning", "general"
@@ -47,6 +50,7 @@ class MainZenoState:
     current_goals: List[str] = field(default_factory=list)
     created_documents: List[Dict[str, Any]] = field(default_factory=list)
     pending_tasks: List[str] = field(default_factory=list)
+    chat_buffer: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class MainZenoAgent(Agent):
@@ -178,6 +182,14 @@ You are always listening and ready to help - no activation required.
         if not raw_text.strip():
             from livekit.agents import StopResponse
             raise StopResponse()
+
+        # Collect user message for batch persistence later
+        user_data = getattr(self.session, "userdata", None)
+        if user_data is not None and hasattr(user_data, "chat_buffer"):
+            user_data.chat_buffer.append({
+                "message_type": "user",
+                "content": raw_text,
+            })
 
         # No activation logic - always process the message
         # The agent is always ready to respond
