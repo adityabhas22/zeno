@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24 hours
     
+    # Clerk Authentication
+    clerk_secret_key: str = ""
+    clerk_webhook_secret: str = "dev"
+    
     # Google Workspace (optional)
     google_client_id: str = ""
     google_client_secret: str = ""
