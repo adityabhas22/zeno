@@ -44,25 +44,45 @@ async def web_entrypoint(ctx: agents.JobContext):
     # Extract user context from participant metadata (set by token)
     # Fallback to ctx.job.metadata if needed
     user_ctx: Dict[str, Any] = {}
+    print(f"🔍 DEBUGGING USER CONTEXT:")
+    print(f"  Job metadata: {ctx.job.metadata}")
+    print(f"  Remote participants count: {len(ctx.room.remote_participants)}")
+    
     try:
         # Try first remote participant's metadata
-        participants = ctx.room.remote_participants
+        participants = list(ctx.room.remote_participants.values())
         if participants:
-            md = participants[0].metadata
+            participant = participants[0]
+            print(f"  First participant: {participant.identity}")
+            print(f"  First participant metadata: {participant.metadata}")
+            md = participant.metadata
             if md:
                 import json as _json
                 user_ctx = _json.loads(md)
+                print(f"✅ User context from participant metadata: {user_ctx}")
+        
         # Fallback to job metadata
         if not user_ctx and ctx.job.metadata:
             import json as _json
             user_ctx = _json.loads(ctx.job.metadata)
-    except Exception:
+            print(f"✅ User context from job metadata: {user_ctx}")
+            
+        if not user_ctx:
+            print(f"❌ NO USER CONTEXT FOUND - using defaults")
+        
+    except Exception as e:
+        print(f"❌ Error parsing user context: {e}")
         user_ctx = {}
 
     user_id = user_ctx.get("user_id")
     session_id_from_token = user_ctx.get("session_id")
     timezone = user_ctx.get("user_timezone")
     preferences = user_ctx.get("user_preferences") or {}
+    user_name = user_ctx.get("user_name", "User")
+    user_email = user_ctx.get("user_email")
+    
+    print(f"User context loaded: {user_name} ({user_email}) in {timezone} timezone")
+    print(f"User preferences: {preferences}")
 
     # Validate user exists if provided
     if user_id:
@@ -77,6 +97,8 @@ async def web_entrypoint(ctx: agents.JobContext):
     userdata_state = MainZenoState(
         user_id=user_id,
         session_id=session_id_from_token,
+        user_name=user_name,
+        user_email=user_email,
         timezone=timezone,
         preferences=preferences,
     )
@@ -107,7 +129,73 @@ async def web_entrypoint(ctx: agents.JobContext):
     # Handle participant events
     @ctx.room.on("participant_connected")
     def on_participant_connected(participant):
+        print(f"🎯 PARTICIPANT CONNECTED EVENT FIRED!")
         print(f"Participant {participant.identity} connected")
+        
+        # Extract user ID from participant identity (format: "user-{clerk_user_id}")
+        clerk_user_id = None
+        if participant.identity and participant.identity.startswith("user-"):
+            clerk_user_id = participant.identity[5:]  # Remove "user-" prefix
+            print(f"🔍 Extracted Clerk User ID: {clerk_user_id}")
+        
+        # Look up user in database to get their actual details
+        user_data = {}
+        if clerk_user_id:
+            try:
+                with session_scope() as db:
+                    db_user = db.query(User).filter(User.clerk_user_id == clerk_user_id).first()
+                    if db_user:
+                        # Cast SQLAlchemy columns to avoid type checker issues
+                        first_name = getattr(db_user, 'first_name', None) or ''
+                        last_name = getattr(db_user, 'last_name', None) or ''
+                        email = getattr(db_user, 'email', None)
+                        timezone = getattr(db_user, 'timezone', None) or "UTC"
+                        preferences = getattr(db_user, 'preferences', None) or {}
+                        
+                        user_data = {
+                            "user_id": clerk_user_id,
+                            "user_name": f"{first_name} {last_name}".strip() or "User",
+                            "user_email": email,
+                            "timezone": timezone,
+                            "preferences": preferences
+                        }
+                        print(f"✅ Found user in database: {user_data}")
+                    else:
+                        print(f"❌ User {clerk_user_id} not found in database")
+            except Exception as e:
+                print(f"❌ Error looking up user in database: {e}")
+        
+        # Also try to extract from participant metadata (as backup)
+        user_ctx_from_metadata: Dict[str, Any] = {}
+        print(f"🔍 CHECKING PARTICIPANT METADATA:")
+        print(f"  Participant metadata: {participant.metadata}")
+        
+        try:
+            if participant.metadata:
+                import json as _json
+                user_ctx_from_metadata = _json.loads(participant.metadata)
+                print(f"✅ User context from metadata: {user_ctx_from_metadata}")
+        except Exception as e:
+            print(f"❌ Error parsing participant metadata: {e}")
+        
+        # Combine database data with metadata (database takes priority)
+        final_user_context = {**user_ctx_from_metadata, **user_data}
+        
+        # Update session userdata with the real user context
+        if final_user_context and hasattr(session, 'userdata') and session.userdata:
+            session.userdata.user_id = final_user_context.get("user_id")
+            session.userdata.session_id = final_user_context.get("session_id")
+            session.userdata.user_name = final_user_context.get("user_name", "User")
+            session.userdata.user_email = final_user_context.get("user_email")
+            session.userdata.timezone = final_user_context.get("timezone")
+            session.userdata.preferences = final_user_context.get("preferences", {})
+            
+            print(f"✅ Updated session userdata with combined user context:")
+            print(f"   User: {session.userdata.user_name} ({session.userdata.user_email})")
+            print(f"   User ID: {session.userdata.user_id}")
+            print(f"   Timezone: {session.userdata.timezone}")
+            print(f"   Preferences: {session.userdata.preferences}")
+        
         # Nothing special for always-active agent
 
     @ctx.room.on("participant_disconnected")
@@ -148,9 +236,21 @@ async def web_entrypoint(ctx: agents.JobContext):
         agent=agent,
         room_input_options=room_options,
     )
+    
+    # Check for any participants that might have connected while we were starting
+    print(f"🔍 POST-START PARTICIPANT CHECK:")
+    print(f"  Remote participants count: {len(ctx.room.remote_participants)}")
+    for participant in ctx.room.remote_participants.values():
+        print(f"  Found participant: {participant.identity}")
+        # Manually trigger our user context extraction for existing participants
+        on_participant_connected(participant)
 
     # Generate web-specific greeting (always active)
-    greeting_instructions = "Greet the user as Zeno, your daily planning assistant, and offer your assistance. You're ready to help immediately."
+    if user_name and user_name != "User":
+        greeting_instructions = f"Greet {user_name} warmly as Zeno, their personal daily planning assistant. Mention their name and offer your assistance. You're ready to help immediately."
+    else:
+        greeting_instructions = "Greet the user as Zeno, your daily planning assistant, and offer your assistance. You're ready to help immediately."
+    
     await session.generate_reply(instructions=greeting_instructions)
 
 

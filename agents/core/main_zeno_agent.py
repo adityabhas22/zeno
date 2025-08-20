@@ -36,6 +36,8 @@ class MainZenoState:
     """State management for main Zeno agent sessions."""
     user_id: Optional[str] = None
     session_id: Optional[str] = None
+    user_name: Optional[str] = None
+    user_email: Optional[str] = None
     timezone: Optional[str] = None
     preferences: dict = field(default_factory=dict)
     session_start_time: Optional[str] = None
@@ -163,6 +165,12 @@ You are always listening and ready to help - no activation required.
             return {
                 "current_agent": context.session.userdata.current_agent,
                 "current_context": context.session.userdata.current_context,
+                "user_name": getattr(context.session.userdata, "user_name", "User"),
+                "user_email": getattr(context.session.userdata, "user_email", None),
+                "user_id": getattr(context.session.userdata, "user_id", None),
+                "session_id": getattr(context.session.userdata, "session_id", None),
+                "timezone": getattr(context.session.userdata, "timezone", None),
+                "preferences": getattr(context.session.userdata, "preferences", {}),
                 "conversation_history": context.session.userdata.conversation_history,
                 "current_goals": context.session.userdata.current_goals,
                 "created_documents": context.session.userdata.created_documents,

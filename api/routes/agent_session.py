@@ -104,13 +104,32 @@ async def create_agent_session(
         ))
         
         # CRITICAL: Add user context to metadata for agent access
+        # Cast to optional strings to avoid SQLAlchemy Column type issues
+        first_name = cast(Optional[str], getattr(db_user, "first_name", None))
+        last_name = cast(Optional[str], getattr(db_user, "last_name", None))
+        user_name = f"{first_name or ''} {last_name or ''}".strip() or "User"
+        
+        # Enhanced user preferences with defaults
+        user_prefs = cast(Optional[dict], getattr(db_user, "preferences", None)) or {}
+        enhanced_preferences = {
+            **user_prefs,
+            "display_name": user_name,
+            "greeting_style": user_prefs.get("greeting_style", "friendly"),
+            "briefing_detail": user_prefs.get("briefing_detail", "detailed"),
+            "communication_style": user_prefs.get("communication_style", "conversational"),
+            "time_format": user_prefs.get("time_format", "12hour"),
+        }
+        
         token.with_metadata(json.dumps({
             "user_id": clerk_user_id,
             "session_id": session_id,
             "agent_type": request.agent_type,
             "user_email": db_user.email,
+            "user_name": user_name,
+            "user_first_name": first_name,
+            "user_last_name": last_name,
             "user_timezone": db_user.timezone,
-            "user_preferences": db_user.preferences
+            "user_preferences": enhanced_preferences
         }))
         
         livekit_token = token.to_jwt()

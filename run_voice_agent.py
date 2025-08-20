@@ -15,7 +15,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from agents.core.smart_entrypoint import smart_entrypoint
+from agents.core.web_entrypoint import web_entrypoint
 from config.settings import get_settings
 
 
@@ -89,7 +89,7 @@ def main():
     try:
         # Run the agent using LiveKit's CLI
         from livekit import agents
-        agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=smart_entrypoint))
+        agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=web_entrypoint))
         
     except KeyboardInterrupt:
         print("\n👋 Zeno voice agent stopped by user")
