@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Zeno Voice Agent Runner
+Zeno Telephony Agent Runner
 
-Simple runner script for testing the Zeno voice agent with LiveKit.
-This script helps set up and run the voice agent for development and testing.
+Specific runner for telephony calls that sets the correct agent name for LiveKit dispatch.
+This agent includes come in/leave activation features for phone calls.
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from agents.core.smart_entrypoint import smart_entrypoint
+from agents.core.telephony_entrypoint import telephony_entrypoint
 from config.settings import get_settings
 
 
@@ -27,7 +27,6 @@ def check_environment():
         "LIVEKIT_API_SECRET",
         "OPENAI_API_KEY",
         "DEEPGRAM_API_KEY",
-        "CARTESIA_API_KEY"
     ]
     
     missing_vars = []
@@ -54,7 +53,7 @@ def check_credentials():
     if not client_secrets_path.exists():
         print("⚠️  Google Workspace integration not configured:")
         print(f"   Missing: {client_secrets_path}")
-        print("   Voice agent will work, but Google features will be limited.")
+        print("   Telephony agent will work, but Google features will be limited.")
         print("   Add client_secret.json to enable full functionality.")
         return False
     
@@ -63,8 +62,8 @@ def check_credentials():
 
 
 def main():
-    """Run the Zeno voice agent."""
-    print("🤖 Starting Zeno Voice Agent...")
+    """Run the Zeno telephony agent."""
+    print("📞 Starting Zeno Telephony Agent...")
     print("=" * 50)
     
     # Check environment
@@ -74,11 +73,18 @@ def main():
     # Check credentials (warn but don't exit)
     check_credentials()
     
-    print("\n🎙️  Zeno is ready for voice interaction!")
-    print("   Connect to your LiveKit room to start talking with Zeno")
-    print("   Say 'Hey Zeno' or 'Zeno' to activate")
-    print("   Say 'Goodbye Zeno' to deactivate")
-    print("\n🔧 Agent Features:")
+    print("\n📞 Zeno Telephony Agent Features:")
+    print("   • Optimized for phone calls")
+    print("   • Come in/leave activation commands")
+    print("   • Enhanced telephony noise cancellation")
+    print("   • Agent name: my-telephony-agent")
+    print("\n🎙️  Activation Commands:")
+    print("   • 'Hey Zeno' or 'Come in, Zeno'")
+    print("   • 'Join' or 'Step in'")
+    print("\n🔇 Deactivation Commands:")
+    print("   • 'Zeno out' or 'Leave'")
+    print("   • 'That's all' or 'Goodbye Zeno'")
+    print("\n🔧 Full Agent Features When Active:")
     print("   • Daily planning and briefings")
     print("   • Calendar management")  
     print("   • Task tracking")
@@ -87,14 +93,17 @@ def main():
     print("\n" + "=" * 50)
     
     try:
-        # Run the agent using LiveKit's CLI
+        # Run the telephony agent using LiveKit's CLI
         from livekit import agents
-        agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=smart_entrypoint))
+        agents.cli.run_app(agents.WorkerOptions(
+            entrypoint_fnc=telephony_entrypoint,
+            agent_name="my-telephony-agent"  # Must match dispatch-rule.json
+        ))
         
     except KeyboardInterrupt:
-        print("\n👋 Zeno voice agent stopped by user")
+        print("\n👋 Zeno telephony agent stopped by user")
     except Exception as e:
-        print(f"❌ Error running voice agent: {e}")
+        print(f"❌ Error running telephony agent: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
