@@ -247,14 +247,17 @@ class ChatHistory(Base):
     user_id = Column(String, ForeignKey("users.clerk_user_id"), nullable=False, index=True)
     session_id = Column(String, ForeignKey("user_sessions.id"), nullable=False, index=True)
     
-    # Message details
+    # Message details (for backward compatibility)
     message_type = Column(String, nullable=False)  # "user", "agent", "system"
     content = Column(Text, nullable=False)
     agent_type = Column(String)                    # Which agent responded
-    
+
     # Context and metadata
     message_metadata = Column(JSON, default=dict)         # Tool calls, context, etc.
     context_tags = Column(JSON, default=list)     # For future vector search
+
+    # Full conversation transcript storage
+    full_transcript = Column(JSON, nullable=True)  # Complete conversation as [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
     
     # Vector database preparation (for future use)
     content_vector = Column(JSON)                 # Placeholder for embeddings

@@ -7,7 +7,9 @@ Uses the MainZenoAgent which is always active (no come in/leave commands).
 
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+import json
+from datetime import datetime
 
 # Add project root to Python path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -24,6 +26,64 @@ from livekit.plugins import deepgram, openai, silero, noise_cancellation
 from config.settings import get_settings
 from agents.core.main_zeno_agent import MainZenoAgent, MainZenoState
 from core.storage import session_scope, UserSession, User
+
+
+class ConversationTranscript:
+    """Handles collection and formatting of conversation transcripts."""
+
+    def __init__(self):
+        self.messages = []
+        self.session_start_time = datetime.utcnow()
+
+    def add_user_message(self, content: str, metadata: Optional[Dict[str, Any]] = None):
+        """Add a user message to the transcript."""
+        self.messages.append({
+            "role": "user",
+            "content": content,
+            "timestamp": datetime.utcnow().isoformat(),
+            "metadata": metadata or {}
+        })
+
+    def add_agent_message(self, content: str, agent_type: str = "main_zeno", metadata: Optional[Dict[str, Any]] = None):
+        """Add an agent message to the transcript."""
+        self.messages.append({
+            "role": "assistant",
+            "content": content,
+            "timestamp": datetime.utcnow().isoformat(),
+            "agent_type": agent_type,
+            "metadata": metadata or {}
+        })
+
+    def add_system_message(self, content: str, metadata: Optional[Dict[str, Any]] = None):
+        """Add a system message to the transcript."""
+        self.messages.append({
+            "role": "system",
+            "content": content,
+            "timestamp": datetime.utcnow().isoformat(),
+            "metadata": metadata or {}
+        })
+
+    def get_transcript(self) -> List[Dict[str, Any]]:
+        """Get the complete conversation transcript."""
+        return self.messages.copy()
+
+    def get_transcript_as_json(self) -> str:
+        """Get the transcript as a JSON string."""
+        return json.dumps(self.messages, indent=2)
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Get a summary of the conversation."""
+        user_messages = [m for m in self.messages if m["role"] == "user"]
+        agent_messages = [m for m in self.messages if m["role"] == "assistant"]
+
+        return {
+            "total_messages": len(self.messages),
+            "user_messages": len(user_messages),
+            "agent_messages": len(agent_messages),
+            "session_duration_seconds": (datetime.utcnow() - self.session_start_time).total_seconds(),
+            "start_time": self.session_start_time.isoformat(),
+            "end_time": datetime.utcnow().isoformat()
+        }
 
 
 async def web_entrypoint(ctx: agents.JobContext):
@@ -105,6 +165,10 @@ async def web_entrypoint(ctx: agents.JobContext):
     
     # Store agent reference for later access
     userdata_state._agent_ref = agent
+
+    # Initialize conversation transcript collector
+    userdata_state.conversation_transcript = ConversationTranscript()
+    userdata_state.chat_buffer = []  # Keep for backward compatibility
     
     # Web-optimized room options
     room_options = RoomInputOptions(
@@ -225,11 +289,29 @@ async def web_entrypoint(ctx: agents.JobContext):
                 uid = getattr(session.userdata, "user_id", None)
                 sid = getattr(session.userdata, "session_id", None)
                 chat_buffer = getattr(session.userdata, "chat_buffer", [])
+                conversation_transcript = getattr(session.userdata, "conversation_transcript", None)
                 if uid and sid:
                     from datetime import datetime
                     from core.storage import ChatHistory
                     with session_scope() as db:
-                        # Append buffered messages
+                        # Save complete conversation transcript if available
+                        if conversation_transcript:
+                            full_transcript = conversation_transcript.get_transcript()
+                            transcript_summary = conversation_transcript.get_summary()
+
+                            # Save the complete conversation as one record
+                            db.add(ChatHistory(
+                                user_id=uid,
+                                session_id=sid,
+                                message_type="transcript",  # New type for complete transcripts
+                                content=f"Conversation transcript with {transcript_summary['total_messages']} messages",
+                                agent_type="main_zeno",
+                                message_metadata=transcript_summary,
+                                context_tags=["conversation_transcript", "complete_session"],
+                                full_transcript=full_transcript,  # Store the complete transcript
+                            ))
+
+                        # Also save individual messages for backward compatibility
                         for m in chat_buffer:
                             db.add(ChatHistory(
                                 user_id=uid,
@@ -240,11 +322,14 @@ async def web_entrypoint(ctx: agents.JobContext):
                                 message_metadata={},
                                 context_tags=[],
                             ))
+
                         # Mark session as ended
                         db.query(UserSession).filter(UserSession.id == sid).update({
                             "is_active": False,
                             "ended_at": datetime.utcnow(),
                         })
+
+                        print(f"✅ Saved conversation transcript with {len(full_transcript) if conversation_transcript else 0} messages")
         except Exception as _e:
             print(f"Error finalizing session: {_e}")
 

@@ -57,6 +57,9 @@ class MainZenoState:
     # Agent reference for accessing user-scoped tools
     _agent_ref: Optional[Any] = None
 
+    # Conversation transcript collector (will be set by web_entrypoint)
+    conversation_transcript: Optional[Any] = None
+
 
 class MainZenoAgent(Agent):
     """
@@ -255,12 +258,48 @@ You are always listening and ready to help - no activation required.
 
         # Collect user message for batch persistence later
         user_data = getattr(self.session, "userdata", None)
-        if user_data is not None and hasattr(user_data, "chat_buffer"):
-            user_data.chat_buffer.append({
-                "message_type": "user",
-                "content": raw_text,
-            })
+        if user_data is not None:
+            # Add to chat_buffer for backward compatibility
+            if hasattr(user_data, "chat_buffer"):
+                user_data.chat_buffer.append({
+                    "message_type": "user",
+                    "content": raw_text,
+                })
+
+            # Add to conversation transcript
+            if hasattr(user_data, "conversation_transcript"):
+                user_data.conversation_transcript.add_user_message(raw_text)
 
         # No activation logic - always process the message
         # The agent is always ready to respond
         return
+
+    async def on_agent_turn_started(self, turn_ctx: ChatContext) -> None:
+        """
+        Called when the agent starts its turn to respond.
+        We'll capture the response text after it's generated.
+        """
+        # Store a reference to capture the response
+        user_data = getattr(self.session, "userdata", None)
+        if user_data is not None:
+            user_data._last_agent_turn_ctx = turn_ctx
+
+    async def on_agent_turn_completed(self, turn_ctx: ChatContext, agent_message: ChatMessage) -> None:
+        """
+        Called when the agent completes its response.
+        Log the agent response to the conversation transcript.
+        """
+        response_text = agent_message.text_content or ""
+        if response_text.strip():
+            user_data = getattr(self.session, "userdata", None)
+            if user_data is not None:
+                # Add to chat_buffer for backward compatibility
+                if hasattr(user_data, "chat_buffer"):
+                    user_data.chat_buffer.append({
+                        "message_type": "agent",
+                        "content": response_text,
+                    })
+
+                # Add to conversation transcript
+                if hasattr(user_data, "conversation_transcript"):
+                    user_data.conversation_transcript.add_agent_message(response_text, "main_zeno")
