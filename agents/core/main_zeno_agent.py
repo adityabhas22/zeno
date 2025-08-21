@@ -203,6 +203,44 @@ You are always listening and ready to help - no activation required.
             print(f"❌ Error updating tools with user context: {e}")
             # Continue with existing tools if update fails
 
+    async def async_update_tools_with_user_context(self, user_id: str):
+        """Update Google workspace tools to use user-specific credentials (async version to avoid blocking STT)."""
+        print(f"🔧 Updating tools with user-specific credentials for user: {user_id} (async)")
+        
+        try:
+            from agents.tools.calendar_tools import CalendarTools
+            
+            # Run tool initialization in executor to avoid blocking the event loop
+            import asyncio
+            
+            def _init_tools():
+                return CalendarTools(user_id=user_id)
+            
+            # Create user-scoped calendar tools instance in background thread
+            user_calendar_tools = await asyncio.get_event_loop().run_in_executor(
+                None, _init_tools
+            )
+            
+            # Store user_id for future reference
+            self._user_id = user_id
+            self._user_calendar_tools = user_calendar_tools
+            
+            # Also initialize calendar tools for the daily planning agent
+            if hasattr(self, 'daily_planning_agent') and self.daily_planning_agent:
+                self.daily_planning_agent.initialize_calendar_tools_with_user_context(user_id)
+            
+            # Initialize MorningBriefingWorkflow services with user context
+            if hasattr(self, 'briefing_workflow') and self.briefing_workflow is not None:
+                if hasattr(self.briefing_workflow, 'initialize_services_with_user_context'):
+                    self.briefing_workflow.initialize_services_with_user_context(user_id)
+            
+            print(f"✅ Successfully created user-scoped calendar tools for user: {user_id} (async)")
+            print(f"   Calendar service initialized with user context: {user_calendar_tools.user_id is not None}")
+            
+        except Exception as e:
+            print(f"❌ Error updating tools with user context (async): {e}")
+            # Continue with existing tools if update fails
+
     async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
         """
         Always active - no gating or activation logic.

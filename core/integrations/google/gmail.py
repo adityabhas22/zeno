@@ -38,8 +38,10 @@ class GmailService:
                 )
             self.service = get_user_service(user_id, "gmail", "v1", GMAIL_SCOPES)
         else:
-            # Fallback to global credentials for backward compatibility
-            self.service = get_service("gmail", "v1", GMAIL_SCOPES)
+            # Enforce user-scoped credentials only
+            raise RuntimeError(
+                "Gmail requires user-scoped credentials. No user context provided."
+            )
     
     def _build_message(
         self, 

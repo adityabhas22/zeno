@@ -36,28 +36,24 @@ class WorkspaceAgent(Agent):
             ),
         )
         
-        # Initialize services
-        self.calendar_service = CalendarService()
-        self.gmail_service = GmailService()
-        self.drive_service = DriveService()
+        # Do not initialize default services; require user-scoped services via session context
+        self.calendar_service = None
+        self.gmail_service = None
+        self.drive_service = None
     
     def _get_user_service(self, context: RunContext, service_name: str):
         """Get user-specific service if available, otherwise return default service."""
-        default_service = getattr(self, service_name)
-        
-        # Try to get user-specific service from session userdata
+        # Enforce user-scoped services only
         if (hasattr(context, 'session') and 
             hasattr(context.session, 'userdata') and 
             hasattr(context.session.userdata, '_agent_ref')):
-            
             agent = context.session.userdata._agent_ref
             if hasattr(agent, '_user_calendar_tools') and agent._user_calendar_tools:
                 user_service = getattr(agent._user_calendar_tools, service_name, None)
                 if user_service:
                     print(f"🔄 Using user-specific {service_name} for request")
                     return user_service
-        
-        return default_service
+        raise RuntimeError("Google Workspace is not connected for this user. Please connect in settings.")
 
     # Calendar Tools
     @function_tool()

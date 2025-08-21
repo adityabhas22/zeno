@@ -31,14 +31,11 @@ class CalendarTools:
             self.drive_service = DriveService(user_id=user_id)
             self.user_id = user_id
         except Exception as e:
-            if user_id:
-                print(f"⚠️ Failed to initialize user-specific Google services for user {user_id}: {e}")
-                print(f"   Falling back to global credentials")
-            # Fallback to global credentials
-            self.calendar_service = CalendarService()
-            self.gmail_service = GmailService()
-            self.drive_service = DriveService()
-            self.user_id = None
+            # Do not fallback to global credentials
+            raise RuntimeError(
+                f"Failed to initialize user-specific Google services for user {user_id}: {e}. "
+                "Please connect Google in settings."
+            )
 
     @function_tool()
     async def create_calendar_event(

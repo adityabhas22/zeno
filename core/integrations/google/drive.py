@@ -41,9 +41,10 @@ class DriveService:
             self.docs_service = get_user_service(user_id, "docs", "v1", DOCS_SCOPES)
             self.drive_service = get_user_service(user_id, "drive", "v3", DRIVE_SCOPES)
         else:
-            # Fallback to global credentials for backward compatibility
-            self.docs_service = get_service("docs", "v1", DOCS_SCOPES)
-            self.drive_service = get_service("drive", "v3", DRIVE_SCOPES)
+            # Enforce user-scoped credentials only
+            raise RuntimeError(
+                "Google Drive/Docs require user-scoped credentials. No user context provided."
+            )
     
     def create_doc(
         self, 

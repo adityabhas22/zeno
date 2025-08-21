@@ -6,7 +6,7 @@ Specialized agent for daily planning, morning briefings, and task management.
 
 from __future__ import annotations
 
-from typing import Any, Optional, List
+from typing import Any, Optional, List, TYPE_CHECKING
 from datetime import datetime, date
 
 from livekit.agents import Agent, function_tool, RunContext
@@ -14,9 +14,11 @@ from livekit.agents import Agent, function_tool, RunContext
 from core.integrations.google.calendar import CalendarService
 from core.integrations.google.gmail import GmailService
 from core.integrations.google.drive import DriveService
-from agents.tools.calendar_tools import CalendarTools
 from agents.tools.task_tools import TaskTools
 from agents.tools.weather_tools import WeatherTools
+
+if TYPE_CHECKING:
+    from agents.tools.calendar_tools import CalendarTools
 
 
 class DailyPlanningAgent(Agent):
@@ -31,10 +33,11 @@ class DailyPlanningAgent(Agent):
     """
     
     def __init__(self) -> None:
-        # Initialize service tools first so we can reference them in tools list
-        self.calendar_tools = CalendarTools()
-        self.task_tools = TaskTools()
-        self.weather_tools = WeatherTools()
+        # Initialize tools as None - will be lazy loaded when user context is available
+        self.calendar_tools: Optional["CalendarTools"] = None
+        self.task_tools = TaskTools()  # TaskTools doesn't need user credentials
+        self.weather_tools = WeatherTools()  # WeatherTools doesn't need user credentials
+        self.user_id: Optional[str] = None
         
         super().__init__(
             instructions="""You are Zeno's Daily Planning specialist, focused on helping users plan and organize their day effectively.
@@ -114,13 +117,25 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
                 self.task_tools.delete_task,
                 self.task_tools.get_task_summary,
                 self.task_tools.share_tasks_to_doc,
-                # Calendar management tools
-                self.calendar_tools.create_calendar_event,
-                self.calendar_tools.list_calendar_events,
-                self.calendar_tools.check_calendar_conflicts,
-                self.calendar_tools.get_upcoming_events,
+                # Calendar management tools - will be added dynamically when user context is available
             ]
         )
+
+    def initialize_calendar_tools_with_user_context(self, user_id: str):
+        """Initialize calendar tools with user-specific credentials."""
+        try:
+            from agents.tools.calendar_tools import CalendarTools
+            self.calendar_tools = CalendarTools(user_id=user_id)
+            self.user_id = user_id
+            print(f"✅ DailyPlanningAgent calendar tools initialized for user: {user_id}")
+        except Exception as e:
+            print(f"❌ Failed to initialize DailyPlanningAgent calendar tools for user {user_id}: {e}")
+            self.calendar_tools = None
+
+    def _ensure_calendar_tools(self):
+        """Ensure calendar tools are available, raise error if not."""
+        if self.calendar_tools is None:
+            raise Exception("Calendar tools not initialized. Please connect your Google account in settings.")
 
     async def on_enter(self) -> None:
         """Automatically start interactive daily planning when agent is activated."""
@@ -158,8 +173,12 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
         
         # Get calendar information
         try:
-            calendar_info = await self.calendar_tools.get_today_schedule(context)
-            briefing_data["calendar"] = calendar_info
+            self._ensure_calendar_tools()
+            if self.calendar_tools is not None:
+                calendar_info = await self.calendar_tools.get_today_schedule(context)
+                briefing_data["calendar"] = calendar_info
+            else:
+                briefing_data["calendar"] = {"error": "Calendar tools not initialized"}
         except Exception as e:
             briefing_data["calendar"] = {"error": str(e)}
         
@@ -190,7 +209,10 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
         
         # Get email summary
         try:
-            gmail_service = GmailService()
+            # Use user-specific Gmail service only
+            if not self.user_id:
+                raise RuntimeError("Gmail not connected. Please connect Google in settings.")
+            gmail_service = GmailService(user_id=self.user_id)
             email_summary = gmail_service.get_email_summary_for_briefing()
             briefing_data["email"] = {"summary": email_summary}
         except Exception as e:
@@ -301,9 +323,13 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
         Returns:
             Conflict analysis and suggestions
         """
-        return await self.calendar_tools.check_calendar_conflicts(
-            context, start_time, end_time
-        )
+        self._ensure_calendar_tools()
+        if self.calendar_tools is not None:
+            return await self.calendar_tools.check_calendar_conflicts(
+                context, start_time, end_time
+            )
+        else:
+            return {"error": "Calendar tools not initialized. Please connect your Google account in settings."}
 
     @function_tool()
     async def suggest_optimal_meeting_time(
@@ -705,7 +731,10 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
         
         # Create comprehensive daily planning document
         try:
-            drive_service = DriveService()
+            # Use user-specific Drive service only
+            if not self.user_id:
+                raise RuntimeError("Drive/Docs not connected. Please connect Google in settings.")
+            drive_service = DriveService(user_id=self.user_id)
             planning_doc = self._create_daily_planning_doc(
                 drive_service, today, combined_goals, briefing_data
             )
@@ -845,7 +874,10 @@ Zeno AI Assistant
         
         # Try to use Gmail service to create draft
         try:
-            gmail_service = GmailService()
+            # Use user-specific Gmail service only
+            if not getattr(self, 'user_id', None):
+                raise RuntimeError("Gmail not connected. Please connect Google in settings.")
+            gmail_service = GmailService(user_id=self.user_id)
             draft_result = gmail_service.draft_email(
                 to=[recipient],
                 subject=subject,

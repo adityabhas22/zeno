@@ -37,8 +37,10 @@ class CalendarService:
                 )
             self.service = get_user_service(user_id, "calendar", "v3", CALENDAR_SCOPES)
         else:
-            # Fallback to global credentials for backward compatibility
-            self.service = get_service("calendar", "v3", CALENDAR_SCOPES)
+            # Enforce user-scoped credentials only
+            raise RuntimeError(
+                "Google Calendar requires user-scoped credentials. No user context provided."
+            )
     
     def create_event(
         self,

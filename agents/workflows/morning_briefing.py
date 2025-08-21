@@ -24,8 +24,55 @@ class MorningBriefingWorkflow:
     
     def __init__(self):
         self.planning_agent = DailyPlanningAgent()
-        self.drive_service = DriveService()
-        self.gmail_service = GmailService()
+        self.drive_service = None  # Lazy-loaded when user context is available
+        self.gmail_service = None  # Lazy-loaded when user context is available
+        self.user_id = None
+
+    def initialize_services_with_user_context(self, user_id: str):
+        """Initialize Google services with user-specific credentials."""
+        try:
+            from core.integrations.google.drive import DriveService
+            from core.integrations.google.gmail import GmailService
+            
+            self.drive_service = DriveService(user_id=user_id)
+            self.gmail_service = GmailService(user_id=user_id)
+            self.user_id = user_id
+            
+            # Also initialize the planning agent's calendar tools
+            if hasattr(self.planning_agent, 'initialize_calendar_tools_with_user_context'):
+                self.planning_agent.initialize_calendar_tools_with_user_context(user_id)
+            
+            print(f"✅ MorningBriefingWorkflow services initialized for user: {user_id}")
+        except Exception as e:
+            print(f"❌ Failed to initialize MorningBriefingWorkflow services for user {user_id}: {e}")
+            self.drive_service = None
+            self.gmail_service = None
+
+    def _ensure_services(self):
+        """Ensure services are available, create fallback services if not."""
+        if self.drive_service is None:
+            try:
+                from core.integrations.google.drive import DriveService
+                if self.user_id:
+                    self.drive_service = DriveService(user_id=self.user_id)
+                else:
+                    # Fallback: service without user context (will have limited functionality)
+                    print("⚠️  Creating DriveService without user context - functionality will be limited")
+                    self.drive_service = DriveService()
+            except Exception as e:
+                print(f"❌ Failed to create DriveService: {e}")
+                
+        if self.gmail_service is None:
+            try:
+                from core.integrations.google.gmail import GmailService
+                if self.user_id:
+                    self.gmail_service = GmailService(user_id=self.user_id)
+                else:
+                    # Fallback: service without user context (will have limited functionality)
+                    print("⚠️  Creating GmailService without user context - functionality will be limited")
+                    self.gmail_service = GmailService()
+            except Exception as e:
+                print(f"❌ Failed to create GmailService: {e}")
     
     async def generate_comprehensive_briefing(
         self,
@@ -75,10 +122,14 @@ class MorningBriefingWorkflow:
         # Save to Google Docs if requested
         if save_to_docs:
             try:
-                doc_result = self.drive_service.create_briefing_doc(
-                    target_date, detailed_briefing
-                )
-                result["google_doc"] = doc_result
+                self._ensure_services()
+                if self.drive_service is not None:
+                    doc_result = self.drive_service.create_briefing_doc(
+                        target_date, detailed_briefing
+                    )
+                    result["google_doc"] = doc_result
+                else:
+                    result["google_doc_error"] = "Drive service not available"
             except Exception as e:
                 result["google_doc_error"] = str(e)
         

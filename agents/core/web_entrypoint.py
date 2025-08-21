@@ -199,13 +199,19 @@ async def web_entrypoint(ctx: agents.JobContext):
             print(f"   Timezone: {session.userdata.timezone}")
             print(f"   Preferences: {session.userdata.preferences}")
             
-            # CRITICAL: Update agent tools with user-specific credentials
+            # CRITICAL: Update agent tools with user-specific credentials (async to avoid blocking STT)
             user_id = final_user_context.get("user_id")
             if (user_id and hasattr(session, 'userdata') and 
                 hasattr(session.userdata, '_agent_ref') and 
                 session.userdata._agent_ref is not None):
                 agent = session.userdata._agent_ref
-                if hasattr(agent, 'update_tools_with_user_context'):
+                if hasattr(agent, 'async_update_tools_with_user_context'):
+                    # Run tool initialization in background to avoid blocking STT connection
+                    import asyncio
+                    asyncio.create_task(agent.async_update_tools_with_user_context(user_id))
+                elif hasattr(agent, 'update_tools_with_user_context'):
+                    # Fallback to sync version if async not available
+                    print("⚠️ Using synchronous tool update - this may cause STT connection issues")
                     agent.update_tools_with_user_context(user_id)
         
         # Nothing special for always-active agent
