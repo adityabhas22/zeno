@@ -272,6 +272,16 @@ Remember: you are a real-time, on-call copilot. Answer directly, act fast, resea
         if not raw_text.strip():
             raise StopResponse()
 
+        # Log to conversation transcript if available
+        user_data = getattr(self.session, "userdata", None)
+        if user_data is not None:
+            # Add to conversation transcript
+            if hasattr(user_data, "conversation_transcript") and user_data.conversation_transcript:
+                user_data.conversation_transcript.add_user_message(raw_text, {
+                    "agent_type": "phone_telephony",
+                    "turn_context": "user_input"
+                })
+
         # 2) Handle deactivation phrases immediately
         if self._is_deactivation(raw_text):
             self.session.interrupt()
@@ -305,3 +315,19 @@ Remember: you are a real-time, on-call copilot. Answer directly, act fast, resea
         stripped_text = self._maybe_strip_zeno_prefix(raw_text)
         if stripped_text != raw_text:
             new_message.content = [stripped_text]
+
+    async def on_agent_turn_completed(self, turn_ctx: ChatContext, agent_message: ChatMessage) -> None:
+        """
+        Log agent responses to conversation transcript for PhoneTelephonyAgent.
+        """
+        response_text = agent_message.text_content or ""
+        if response_text.strip():
+            user_data = getattr(self.session, "userdata", None)
+            if user_data is not None:
+                # Add to conversation transcript
+                if hasattr(user_data, "conversation_transcript") and user_data.conversation_transcript:
+                    user_data.conversation_transcript.add_agent_message(
+                        response_text,
+                        agent_type="phone_telephony",
+                        metadata={"turn_context": "agent_response"}
+                    )

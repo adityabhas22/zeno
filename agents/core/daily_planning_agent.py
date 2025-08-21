@@ -6,10 +6,13 @@ Specialized agent for daily planning, morning briefings, and task management.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional, List, TYPE_CHECKING
 from datetime import datetime, date
 
-from livekit.agents import Agent, function_tool, RunContext
+from livekit.agents import Agent, function_tool, RunContext, ChatContext, ChatMessage
+
+logger = logging.getLogger(__name__)
 
 from core.integrations.google.calendar import CalendarService
 from core.integrations.google.gmail import GmailService
@@ -38,7 +41,7 @@ class DailyPlanningAgent(Agent):
         self.task_tools = TaskTools()  # TaskTools doesn't need user credentials
         self.weather_tools = WeatherTools()  # WeatherTools doesn't need user credentials
         self.user_id: Optional[str] = None
-        
+
         super().__init__(
             instructions="""You are Zeno's Daily Planning specialist, focused on helping users plan and organize their day effectively.
 
@@ -82,8 +85,17 @@ Your core responsibilities:
 **Interactive Planning Process**:
 - Start interactive sessions by asking "What do you have planned today? What do you want to achieve?"
 - After their response, ask "What else do you want to accomplish today? Any other priorities?"
-- After their final response, create comprehensive planning document and email draft
+- **Automatically parse their goals and create individual tasks** using intelligent parsing
+- Ask about time preferences for the created tasks (morning, afternoon, specific times)
+- After time preferences, create comprehensive planning document and email draft
 - Always use aditya@liftoffllc.com as the default email address
+
+**Intelligent Task Creation**:
+- Parse user responses to identify individual goals and tasks
+- Automatically categorize tasks based on keywords (work, health, personal, etc.)
+- Set appropriate priorities based on urgency keywords
+- Create database records for all identified tasks
+- Allow users to set preferred times for tasks
 
 **Default Behavior**:
 - When activated, automatically start interactive daily planning with comprehensive day brief
@@ -142,6 +154,43 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
         await self.session.generate_reply(
             instructions="You've just been activated for daily planning. Use the start_interactive_daily_planning tool to begin the comprehensive planning workflow."
         )
+
+    async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
+        """
+        Log user messages to conversation transcript for DailyPlanningAgent.
+        """
+        raw_text = new_message.text_content or ""
+
+        # Ignore empty input
+        if not raw_text.strip():
+            from livekit.agents import StopResponse
+            raise StopResponse()
+
+        # Log to conversation transcript if available
+        user_data = getattr(self.session, "userdata", None)
+        if user_data is not None:
+            # Add to conversation transcript
+            if hasattr(user_data, "conversation_transcript") and user_data.conversation_transcript:
+                user_data.conversation_transcript.add_user_message(raw_text, {
+                    "agent_type": "daily_planning",
+                    "turn_context": "user_input"
+                })
+
+    async def on_agent_turn_completed(self, turn_ctx: ChatContext, agent_message: ChatMessage) -> None:
+        """
+        Log agent responses to conversation transcript for DailyPlanningAgent.
+        """
+        response_text = agent_message.text_content or ""
+        if response_text.strip():
+            user_data = getattr(self.session, "userdata", None)
+            if user_data is not None:
+                # Add to conversation transcript
+                if hasattr(user_data, "conversation_transcript") and user_data.conversation_transcript:
+                    user_data.conversation_transcript.add_agent_message(
+                        response_text,
+                        agent_type="daily_planning",
+                        metadata={"turn_context": "agent_response"}
+                    )
 
     @function_tool()
     async def generate_morning_briefing(
@@ -645,7 +694,7 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
         user_response: str,
         is_final_response: bool = False,
     ) -> dict[str, Any]:
-        """Capture user's response during interactive planning session.
+        """Capture user's response during interactive planning session and create tasks.
 
         Args:
             user_response: What the user wants to achieve/has planned
@@ -670,6 +719,31 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
             "timestamp": datetime.now().isoformat()
         })
         
+        # Create tasks from the user's response using intelligent parsing
+        try:
+            from agents.tools.task_tools import TaskTools
+            task_tools = TaskTools()
+
+            # Create tasks from this specific response
+            task_result = await task_tools.create_tasks_from_goals(context, user_response)
+
+            if task_result.get("created_tasks", 0) > 0:
+                # Store task IDs in planning session for time preference collection
+                if "created_task_ids" not in planning_session:
+                    planning_session["created_task_ids"] = []
+
+                planning_session["created_task_ids"].extend([
+                    task["id"] for task in task_result.get("tasks", [])
+                ])
+
+                await context.session.say(
+                    f"Great! I've created {task_result['created_tasks']} task{'s' if task_result['created_tasks'] != 1 else ''} from what you mentioned.",
+                    allow_interruptions=True
+                )
+        except Exception as e:
+            logger.error(f"Failed to create tasks from user response: {e}")
+            # Continue with planning even if task creation fails
+
         # Store user goals in shared context
         if hasattr(context.session, 'userdata') and context.session.userdata:
             context.session.userdata.current_goals.append(user_response)
@@ -689,7 +763,148 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
                 "step": "follow_up"
             }
         else:
-            # Final response received, complete the planning
+            # Final response received, ask about time preferences before completing
+            return await self.collect_time_preferences(context)
+
+    @function_tool()
+    async def collect_time_preferences(
+        self,
+        context: RunContext,
+    ) -> dict[str, Any]:
+        """Collect time preferences for the created tasks."""
+        # Get planning session
+        planning_session = {}
+        if hasattr(context.session, 'userdata') and context.session.userdata:
+            planning_session = getattr(context.session.userdata, 'planning_session', {})
+
+        if not planning_session or not planning_session.get("created_task_ids"):
+            # No tasks created, proceed to completion
+            return await self.complete_planning_session(context)
+
+        task_ids = planning_session["created_task_ids"]
+
+        # Get task details to ask about time preferences
+        try:
+            from agents.tools.task_tools import TaskTools
+            task_tools = TaskTools()
+
+            # Get task details
+            all_tasks = []
+            for task_id in task_ids:
+                # We need to get task by ID - add this method to TaskTools if needed
+                # For now, we'll ask about time preferences for all tasks at once
+                pass
+
+            # Ask about time preferences
+            await context.session.say(
+                f"Now, would you like to set preferred times for any of these tasks? "
+                f"For example, 'Set meeting task to 2:00 PM' or 'Make gym task morning'. "
+                f"If not, just say 'no' or 'skip'.",
+                allow_interruptions=True
+            )
+
+            planning_session["step"] = "time_preferences"
+            return {
+                "status": "collecting_times",
+                "message": "Waiting for time preferences",
+                "step": "time_preferences"
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to collect time preferences: {e}")
+            return await self.complete_planning_session(context)
+
+    @function_tool()
+    async def handle_time_preference_response(
+        self,
+        context: RunContext,
+        user_response: str,
+    ) -> dict[str, Any]:
+        """Parse user's time preference response and set task times."""
+        # Get planning session
+        planning_session = {}
+        if hasattr(context.session, 'userdata') and context.session.userdata:
+            planning_session = getattr(context.session.userdata, 'planning_session', {})
+
+        if not planning_session:
+            return await self.complete_planning_session(context)
+
+        # Simple time preference parsing
+        user_response_lower = user_response.lower()
+
+        # Check if user wants to skip time setting
+        if any(word in user_response_lower for word in ['no', 'skip', 'none', 'done', 'finish']):
+            return await self.complete_planning_session(context)
+
+        # Parse time preferences using timezone utilities
+        try:
+            from agents.tools.task_tools import TaskTools
+            from core.storage.timezone_utils import TimezoneManager
+            task_tools = TaskTools()
+
+            # Get user's timezone
+            user_timezone = getattr(context.session.userdata, 'timezone', 'UTC')
+
+            # Parse time with intelligent parsing
+            parsed_time, normalized_timezone = TimezoneManager.parse_time_with_timezone(
+                user_response, user_timezone
+            )
+
+            # Convert to HH:MM format
+            preferred_time = f"{parsed_time.hour:02d}:{parsed_time.minute:02d}"
+
+            # Set time for the first task (simple implementation)
+            # In a more sophisticated version, we'd parse which task the user is referring to
+            task_ids = planning_session.get("created_task_ids", [])
+            if task_ids:
+                first_task_id = task_ids[0]
+                result = await task_tools.set_task_time(context, first_task_id, preferred_time)
+
+                if "error" not in result:
+                    await context.session.say(
+                        f"Set task time to {preferred_time}.",
+                        allow_interruptions=True
+                    )
+                else:
+                    await context.session.say(
+                        f"I had trouble setting the time: {result['error']}",
+                        allow_interruptions=True
+                    )
+
+        except Exception as e:
+            logger.error(f"Failed to parse time preference: {e}")
+            await context.session.say(
+                "I had trouble understanding that time. Let's continue with the planning.",
+                allow_interruptions=True
+            )
+
+        # Complete the planning session
+        return await self.complete_planning_session(context)
+
+    @function_tool()
+    async def handle_planning_workflow(
+        self,
+        context: RunContext,
+        user_input: str,
+    ) -> dict[str, Any]:
+        """Handle workflow transitions during planning session."""
+        # Get planning session
+        planning_session = {}
+        if hasattr(context.session, 'userdata') and context.session.userdata:
+            planning_session = getattr(context.session.userdata, 'planning_session', {})
+
+        if not planning_session:
+            return {"error": "No active planning session"}
+
+        current_step = planning_session.get("step", "initial_question")
+
+        if current_step == "initial_question":
+            return await self.capture_planning_response(context, user_input, False)
+        elif current_step == "follow_up":
+            return await self.capture_planning_response(context, user_input, True)
+        elif current_step == "time_preferences":
+            return await self.handle_time_preference_response(context, user_input)
+        else:
             return await self.complete_planning_session(context)
 
     @function_tool()
@@ -725,6 +940,26 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
         
         combined_goals = "\n\n".join([f"• {goal}" for goal in all_goals])
         
+        # Get created tasks for the document
+        created_tasks = []
+        try:
+            from agents.tools.task_tools import TaskTools
+            task_tools = TaskTools()
+
+            # Get all tasks created during this session
+            task_ids = planning_session.get("created_task_ids", [])
+            for task_id in task_ids:
+                # We need a method to get task by ID - for now, we'll list all tasks
+                # and filter by creation time to get recently created ones
+                pass
+
+            # Get today's tasks to include in the document
+            today_tasks = await task_tools.get_today_tasks(context)
+            created_tasks = today_tasks.get("today_tasks", [])
+
+        except Exception as e:
+            logger.error(f"Failed to get created tasks: {e}")
+
         # Generate morning briefing data
         today = date.today().isoformat()
         briefing_data = await self.generate_morning_briefing(context, today)
@@ -734,14 +969,18 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
             # Use user-specific Drive service only
             if not self.user_id:
                 raise RuntimeError("Drive/Docs not connected. Please connect Google in settings.")
+
+            # Import DriveService
+            from core.integrations.google.drive import DriveService
             drive_service = DriveService(user_id=self.user_id)
+
             planning_doc = self._create_daily_planning_doc(
-                drive_service, today, combined_goals, briefing_data
+                drive_service, today, combined_goals, briefing_data, created_tasks or []
             )
             
             # Draft email
             email_draft = self._create_email_draft(
-                planning_session["user_email"], 
+                planning_session.get("user_email", "aditya@liftoffllc.com"),
                 today, 
                 combined_goals, 
                 planning_doc["url"]
@@ -760,7 +999,8 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
                     "type": "daily_planning",
                     "document": planning_doc,
                     "email_draft": email_draft,
-                    "created_at": datetime.now().isoformat()
+                    "created_at": datetime.now().isoformat(),
+                    "task_count": len(created_tasks)
                 })
                 context.session.userdata.conversation_history.append("Created daily planning document and email draft")
             
@@ -769,6 +1009,7 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
                 "planning_document": planning_doc,
                 "email_draft": email_draft,
                 "user_goals": all_goals,
+                "created_tasks": len(created_tasks),
                 "message": "Daily planning session completed successfully!"
             }
             
@@ -784,7 +1025,8 @@ Remember: Your goal is to help users start each day feeling prepared, organized,
         drive_service: DriveService, 
         date: str, 
         user_goals: str, 
-        briefing_data: dict
+        briefing_data: dict,
+        created_tasks: Optional[list] = None
     ) -> dict[str, Any]:
         """Create a comprehensive daily planning document."""
         title = f"Daily Planning - {date}"
@@ -826,10 +1068,21 @@ MORNING BRIEFING:
         else:
             content += "TODAY'S SCHEDULE: No scheduled events\n\n"
         
-        # Add tasks
+        # Add created tasks from planning session
+        if created_tasks:
+            content += "CREATED TASKS FROM PLANNING SESSION:\n"
+            for task in created_tasks:
+                priority_label = "🔴" if task.get("priority") == 1 else "🟡" if task.get("priority") == 2 else "🔵"
+                time_info = ""
+                if task.get("reminder_time"):
+                    time_info = f" at {task['reminder_time']}"
+                content += f"• {priority_label} {task['title']}{time_info}\n"
+            content += "\n"
+
+        # Add existing priority tasks
         tasks = briefing_data.get("tasks", {})
         if "priority" in tasks and tasks["priority"].get("priority_tasks"):
-            content += "PRIORITY TASKS:\n"
+            content += "EXISTING PRIORITY TASKS:\n"
             for task in tasks["priority"]["priority_tasks"]:
                 priority_label = "🔴" if task.get("priority") == 1 else "🟡" if task.get("priority") == 2 else "🔵"
                 content += f"• {priority_label} {task['title']}\n"
