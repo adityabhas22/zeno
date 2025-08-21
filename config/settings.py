@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     api_workers: int = 1
+    api_base_url: str = "http://localhost:8000"
+    frontend_url: str = "http://localhost:3000"
     
     # Database (optional with default)
     database_url: str = "sqlite:///./zeno.db"

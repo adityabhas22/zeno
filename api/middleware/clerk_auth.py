@@ -128,6 +128,21 @@ async def get_current_user(
         )
 
 
+async def get_current_user_id(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
+) -> str:
+    """
+    FastAPI dependency to get just the clerk_user_id string.
+    
+    Usage:
+        @app.get("/protected")
+        async def protected_route(user_id: str = Depends(get_current_user_id)):
+            return {"message": f"Hello {user_id}"}
+    """
+    user_info = await get_current_user(credentials)
+    return user_info["clerk_user_id"]
+
+
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))
 ) -> Optional[Dict[str, Any]]:

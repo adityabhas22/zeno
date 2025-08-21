@@ -12,6 +12,7 @@ from email.message import EmailMessage
 from typing import Iterable, Optional, List, Dict, Any
 
 from .oauth import get_service
+from .user_oauth import get_user_service, check_user_has_google_access
 
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
@@ -19,8 +20,26 @@ GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 class GmailService:
     """Gmail service with Zeno-specific enhancements."""
     
-    def __init__(self):
-        self.service = get_service("gmail", "v1", GMAIL_SCOPES)
+    def __init__(self, user_id: Optional[str] = None):
+        """
+        Initialize Gmail service.
+        
+        Args:
+            user_id: If provided, use user-specific credentials. 
+                    If None, falls back to global credentials.
+        """
+        self.user_id = user_id
+        
+        if user_id:
+            if not check_user_has_google_access(user_id, GMAIL_SCOPES):
+                raise Exception(
+                    f"User {user_id} has not connected their Google account or missing Gmail permissions. "
+                    "Please connect your Google account in settings."
+                )
+            self.service = get_user_service(user_id, "gmail", "v1", GMAIL_SCOPES)
+        else:
+            # Fallback to global credentials for backward compatibility
+            self.service = get_service("gmail", "v1", GMAIL_SCOPES)
     
     def _build_message(
         self, 

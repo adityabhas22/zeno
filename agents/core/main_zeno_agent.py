@@ -53,6 +53,9 @@ class MainZenoState:
     created_documents: List[Dict[str, Any]] = field(default_factory=list)
     pending_tasks: List[str] = field(default_factory=list)
     chat_buffer: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Agent reference for accessing user-scoped tools
+    _agent_ref: Optional[Any] = None
 
 
 class MainZenoAgent(Agent):
@@ -80,7 +83,7 @@ class MainZenoAgent(Agent):
         # Collect all tools before calling super().__init__
         all_tools = []
         
-        # Add Google Workspace tools
+        # Add Google Workspace tools (will be updated with user context later)
         all_tools.extend(get_workspace_tools())
         
         super().__init__(
@@ -178,6 +181,27 @@ You are always listening and ready to help - no activation required.
                 "last_briefing_available": context.session.userdata.last_briefing_data is not None
             }
         return {"error": "No session context available"}
+
+    def update_tools_with_user_context(self, user_id: str):
+        """Update Google workspace tools to use user-specific credentials."""
+        print(f"🔧 Updating tools with user-specific credentials for user: {user_id}")
+        
+        try:
+            from agents.tools.calendar_tools import CalendarTools
+            
+            # Create new user-scoped calendar tools instance
+            user_calendar_tools = CalendarTools(user_id=user_id)
+            
+            # Store user_id for future reference
+            self._user_id = user_id
+            self._user_calendar_tools = user_calendar_tools
+            
+            print(f"✅ Successfully created user-scoped calendar tools for user: {user_id}")
+            print(f"   Calendar service initialized with user context: {user_calendar_tools.user_id is not None}")
+            
+        except Exception as e:
+            print(f"❌ Error updating tools with user context: {e}")
+            # Continue with existing tools if update fails
 
     async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
         """

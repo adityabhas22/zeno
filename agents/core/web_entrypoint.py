@@ -103,6 +103,9 @@ async def web_entrypoint(ctx: agents.JobContext):
         preferences=preferences,
     )
     
+    # Store agent reference for later access
+    userdata_state._agent_ref = agent
+    
     # Web-optimized room options
     room_options = RoomInputOptions(
         noise_cancellation=noise_cancellation.BVCTelephony(),  # Use same for consistency
@@ -195,6 +198,15 @@ async def web_entrypoint(ctx: agents.JobContext):
             print(f"   User ID: {session.userdata.user_id}")
             print(f"   Timezone: {session.userdata.timezone}")
             print(f"   Preferences: {session.userdata.preferences}")
+            
+            # CRITICAL: Update agent tools with user-specific credentials
+            user_id = final_user_context.get("user_id")
+            if (user_id and hasattr(session, 'userdata') and 
+                hasattr(session.userdata, '_agent_ref') and 
+                session.userdata._agent_ref is not None):
+                agent = session.userdata._agent_ref
+                if hasattr(agent, 'update_tools_with_user_context'):
+                    agent.update_tools_with_user_context(user_id)
         
         # Nothing special for always-active agent
 

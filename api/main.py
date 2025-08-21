@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from config.settings import get_settings
 from api.middleware.auth import setup_auth_middleware
-from api.routes import auth, tasks, calendar, briefings, agent, agent_session, ios, clerk_webhooks, user
+from api.routes import auth, tasks, calendar, briefings, agent, agent_session, integrations, ios, clerk_webhooks, user
 
 # Initialize settings
 settings = get_settings()
@@ -53,6 +53,7 @@ app.include_router(calendar.router, prefix="/calendar", tags=["Calendar"])
 app.include_router(briefings.router, prefix="/briefings", tags=["Briefings"])
 app.include_router(agent.router, prefix="/agent", tags=["Agent"])
 app.include_router(agent_session.router, prefix="/agent/session", tags=["Agent Sessions"])
+app.include_router(integrations.router, prefix="/integrations", tags=["Integrations"])
 app.include_router(ios.router, prefix="/ios", tags=["iOS"])
 app.include_router(clerk_webhooks.router, prefix="/webhooks/clerk", tags=["Clerk Webhooks"])
 

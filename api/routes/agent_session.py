@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from api.middleware.clerk_auth import get_current_user
+from api.middleware.clerk_auth import get_current_user_id, get_current_user
 from core.storage import get_database_session, User, UserSession, session_scope
 from config.settings import get_settings
 
@@ -39,7 +39,7 @@ class AgentSessionResponse(BaseModel):
 @router.post("/create", response_model=AgentSessionResponse)
 async def create_agent_session(
     request: AgentSessionRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    clerk_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_database_session)
 ):
     """
@@ -51,7 +51,7 @@ async def create_agent_session(
     3. Generates a LiveKit room and token with user metadata
     4. Returns connection details for the frontend
     """
-    clerk_user_id = current_user["clerk_user_id"]
+    # clerk_user_id is now passed directly from the dependency
     
     # Validate user exists in our database
     db_user = db.query(User).filter(User.clerk_user_id == clerk_user_id).first()
@@ -156,11 +156,10 @@ async def create_agent_session(
 @router.get("/status/{session_id}")
 async def get_session_status(
     session_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    clerk_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_database_session)
 ):
     """Get the status of a specific agent session."""
-    clerk_user_id = current_user["clerk_user_id"]
     
     # Find session and verify ownership
     user_session = db.query(UserSession).filter(
@@ -188,11 +187,11 @@ async def get_session_status(
 @router.post("/end/{session_id}")
 async def end_agent_session(
     session_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    clerk_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_database_session)
 ):
     """End an active agent session."""
-    clerk_user_id = current_user["clerk_user_id"]
+
     
     # Find session and verify ownership
     user_session = db.query(UserSession).filter(
@@ -228,12 +227,12 @@ async def end_agent_session(
 
 @router.get("/my-sessions")
 async def get_my_sessions(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    clerk_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_database_session),
     limit: int = 10
 ):
     """Get current user's recent agent sessions."""
-    clerk_user_id = current_user["clerk_user_id"]
+
     
     sessions = db.query(UserSession).filter(
         UserSession.user_id == clerk_user_id
