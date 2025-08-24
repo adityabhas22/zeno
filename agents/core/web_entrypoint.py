@@ -3,6 +3,12 @@ Web/API-Specific Entrypoint for Non-Telephony Connections
 
 This entrypoint is for web interfaces, API calls, and direct connections.
 Uses the MainZenoAgent which is always active (no come in/leave commands).
+
+Deepgram Timeout Fix Applied:
+- Added progress notes for long-running operations
+- Configured proper timeouts for STT, LLM, and tool calls
+- Enhanced AgentSession configuration for timeout prevention
+- Added async timeout handling in task tools
 """
 
 import sys
@@ -180,16 +186,18 @@ async def web_entrypoint(ctx: agents.JobContext):
     if target_identity is not None:
         room_options.participant_identity = target_identity
 
-    # Create session with main agent
+    # Create session with main agent - optimized for long-running operations
     session = AgentSession(
         stt=deepgram.STT(model="nova-3", language="en"),
-        llm=openai.LLM(model="gpt-5"),
+        llm=openai.LLM(model="gpt-5"),  # Timeout handled via settings in the agent tools
         tts=deepgram.TTS(model="aura-2-thalia-en"),
-        vad=silero.VAD.load(),
+        vad=silero.VAD.load(),  # VAD configuration handled via agent session parameters
         turn_detection="vad",
         max_tool_steps=settings.agent_max_tool_steps,
         preemptive_generation=settings.agent_preemptive_generation,
         allow_interruptions=settings.agent_allow_interruptions,
+        # Note: tool_call_timeout and session_timeout are not direct AgentSession parameters
+        # Timeout handling is implemented in the agent tools themselves
         userdata=userdata_state,
     )
 

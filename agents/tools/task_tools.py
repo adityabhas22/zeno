@@ -6,8 +6,9 @@ Tools for managing daily tasks and to-dos within Zeno using database persistence
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Callable
 from datetime import datetime, date, time
 
 from livekit.agents import function_tool, RunContext
@@ -25,6 +26,46 @@ class TaskTools:
     def __init__(self):
         # No longer using in-memory storage - now using database
         pass
+
+    async def _run_with_progress_and_timeout(
+        self,
+        context: RunContext,
+        operation: Callable,
+        operation_name: str,
+        timeout_seconds: Optional[float] = None,
+        progress_message: str = "Working on it...",
+        *args,
+        **kwargs
+    ) -> Any:
+        """Run a long-running operation with progress updates and timeout handling."""
+        from config.settings import get_settings
+
+        # Use configured timeout if not specified
+        if timeout_seconds is None:
+            settings = get_settings()
+            timeout_seconds = settings.tool_call_timeout
+
+        try:
+            # Send initial progress note
+            await self.progress_note(context, progress_message)
+
+            # Run the operation with timeout
+            result = await asyncio.wait_for(
+                operation(*args, **kwargs),
+                timeout=timeout_seconds
+            )
+
+            return result
+
+        except asyncio.TimeoutError:
+            error_msg = f"Operation '{operation_name}' timed out after {timeout_seconds} seconds"
+            logger.error(error_msg)
+            await self.progress_note(context, f"Sorry, {operation_name} took too long. Please try again.")
+            raise Exception(error_msg)
+
+        except Exception as e:
+            logger.error(f"Operation '{operation_name}' failed: {e}")
+            raise
 
     @function_tool()
     async def create_task(
@@ -329,6 +370,20 @@ class TaskTools:
         return "\n".join(summary_parts)
 
     @function_tool()
+    async def progress_note(
+        self,
+        context: RunContext,
+        message: str = "Working on your request...",
+    ) -> dict[str, Any]:
+        """Provide a progress update to keep the connection alive during long operations."""
+        try:
+            await context.session.say(message, allow_interruptions=True)
+            return {"success": True, "message": "Progress note sent"}
+        except Exception as e:
+            logger.error(f"Failed to send progress note: {e}")
+            return {"success": False, "error": str(e)}
+
+    @function_tool()
     async def share_tasks_to_doc(
         self,
         context: RunContext,
@@ -354,19 +409,35 @@ class TaskTools:
             from core.integrations.google.drive import DriveService
             drive_service = DriveService(user_id=user_id)
 
-            # Get tasks
-            if include_all_tasks:
-                all_tasks = await self.list_tasks(context, completed=False)
-                priority_tasks = [t for t in all_tasks if t.get("priority", 5) <= 2]
-            else:
-                priority_result = await self.get_priority_tasks(context)
-                priority_tasks = priority_result.get("priority_tasks", [])
-                all_tasks = priority_tasks
+            # Get tasks with timeout handling
+            async def get_tasks():
+                if include_all_tasks:
+                    all_tasks = await self.list_tasks(context, completed=False)
+                    return all_tasks, [t for t in all_tasks if t.get("priority", 5) <= 2]
+                else:
+                    priority_result = await self.get_priority_tasks(context)
+                    priority_tasks = priority_result.get("priority_tasks", [])
+                    return priority_tasks, priority_tasks
 
-            # Create the document
-            today = date.today().isoformat()
-            doc_result = drive_service.create_task_summary_doc(
-                today, all_tasks, priority_tasks
+            all_tasks, priority_tasks = await self._run_with_progress_and_timeout(
+                context,
+                get_tasks,
+                "Getting tasks",
+                progress_message="Getting your tasks..."
+            )
+
+            # Create the document with timeout handling
+            async def create_doc():
+                today = date.today().isoformat()
+                return drive_service.create_task_summary_doc(
+                    today, all_tasks, priority_tasks
+                )
+
+            doc_result = await self._run_with_progress_and_timeout(
+                context,
+                create_doc,
+                "Document creation",
+                progress_message="Creating your task summary document..."
             )
 
             return {

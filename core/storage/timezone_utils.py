@@ -237,3 +237,5 @@ def get_user_timezone_object(user_timezone: str) -> pytz.BaseTzInfo:
 def format_time_for_user(dt: datetime, user_timezone: str = 'UTC') -> str:
     """Format datetime for user display."""
     return TimezoneManager.format_time_for_display(dt, user_timezone)
+
+

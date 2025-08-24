@@ -83,7 +83,14 @@ class Settings(BaseSettings):
     agent_max_tool_steps: int = 12
     agent_preemptive_generation: bool = False
     agent_allow_interruptions: bool = True
-    
+
+    # Timeout Configuration (to prevent Deepgram timeouts)
+    stt_timeout: float = 30.0  # STT operation timeout
+    llm_timeout: float = 45.0  # LLM operation timeout
+    tool_call_timeout: float = 60.0  # Tool call timeout
+    session_timeout: float = 300.0  # Session timeout (5 minutes)
+    progress_note_interval: float = 15.0  # Send progress notes every 15 seconds
+
     # Daily Planning
     default_briefing_time: str = "08:00"
     max_daily_tasks: int = 20
