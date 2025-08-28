@@ -129,16 +129,8 @@ async def smart_entrypoint(ctx: agents.JobContext):
         # Merge contexts (DB takes priority)
         final_user_context = {**user_ctx_from_metadata, **user_data}
 
-        # Update session userdata
-        if final_user_context and getattr(session, 'userdata', None):
-            session.userdata.user_id = final_user_context.get("user_id")
-            session.userdata.session_id = final_user_context.get("session_id")
-            session.userdata.user_name = final_user_context.get("user_name", "User")
-            session.userdata.user_email = final_user_context.get("user_email")
-            session.userdata.timezone = final_user_context.get("timezone")
-            session.userdata.preferences = final_user_context.get("preferences", {})
-
-            # Initialize transcript collector and legacy buffer for compatibility
+        # Always initialize transcript + buffer when userdata exists
+        if getattr(session, 'userdata', None):
             try:
                 session.userdata.conversation_transcript = ConversationTranscript()
             except Exception:
@@ -147,6 +139,15 @@ async def smart_entrypoint(ctx: agents.JobContext):
                 session.userdata.chat_buffer = []
             except Exception:
                 pass
+
+        # Update session userdata if we have context
+        if final_user_context and getattr(session, 'userdata', None):
+            session.userdata.user_id = final_user_context.get("user_id")
+            session.userdata.session_id = final_user_context.get("session_id")
+            session.userdata.user_name = final_user_context.get("user_name", "User")
+            session.userdata.user_email = final_user_context.get("user_email")
+            session.userdata.timezone = final_user_context.get("timezone")
+            session.userdata.preferences = final_user_context.get("preferences", {})
 
             print("✅ Updated session userdata with combined user context:")
             print(f"   User: {session.userdata.user_name} ({session.userdata.user_email})")

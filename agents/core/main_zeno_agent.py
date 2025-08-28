@@ -287,7 +287,7 @@ You are always listening and ready to help - no activation required.
                 })
 
             # Add to conversation transcript
-            if hasattr(user_data, "conversation_transcript"):
+            if hasattr(user_data, "conversation_transcript") and user_data.conversation_transcript:
                 user_data.conversation_transcript.add_user_message(raw_text)
 
         # No activation logic - always process the message
@@ -321,5 +321,5 @@ You are always listening and ready to help - no activation required.
                     })
 
                 # Add to conversation transcript
-                if hasattr(user_data, "conversation_transcript"):
+                if hasattr(user_data, "conversation_transcript") and user_data.conversation_transcript:
                     user_data.conversation_transcript.add_agent_message(response_text, "main_zeno")
