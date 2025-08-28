@@ -26,7 +26,7 @@ from livekit.agents import Agent, AgentSession, StopResponse, ChatContext, ChatM
 from livekit.plugins import openai, deepgram, cartesia, silero, noise_cancellation
 
 from config.settings import get_settings
-from agents.core.workspace_agent import get_workspace_tools
+from agents.tools.google_workspace_tools import GoogleWorkspaceTools
 from agents.core.daily_planning_agent import DailyPlanningAgent
 from agents.workflows.morning_briefing import MorningBriefingWorkflow
 
@@ -85,9 +85,29 @@ class MainZenoAgent(Agent):
         
         # Collect all tools before calling super().__init__
         all_tools = []
-        
-        # Add Google Workspace tools (will be updated with user context later)
-        all_tools.extend(get_workspace_tools())
+
+        # Add Google Workspace tools (per-user; initialized on user context)
+        self._gw_tools = GoogleWorkspaceTools()
+        all_tools.extend([
+            # Calendar
+            self._gw_tools.create_calendar_event,
+            self._gw_tools.list_calendar_events,
+            self._gw_tools.get_today_schedule,
+            self._gw_tools.check_calendar_conflicts,
+            self._gw_tools.get_upcoming_events,
+            # Gmail
+            self._gw_tools.draft_email,
+            self._gw_tools.send_email,
+            self._gw_tools.search_email,
+            self._gw_tools.get_last_unread_email,
+            self._gw_tools.get_email,
+            self._gw_tools.mark_email_as_read,
+            # Drive/Docs
+            self._gw_tools.create_doc,
+            self._gw_tools.append_to_doc,
+            # Utility
+            self._gw_tools.progress_note,
+        ])
         
         super().__init__(
             instructions="""You are Zeno, an AI-powered daily planning assistant.
@@ -186,22 +206,23 @@ You are always listening and ready to help - no activation required.
         return {"error": "No session context available"}
 
     def update_tools_with_user_context(self, user_id: str):
-        """Update Google workspace tools to use user-specific credentials."""
+        """Update Google Workspace tools to use user-specific credentials."""
         print(f"🔧 Updating tools with user-specific credentials for user: {user_id}")
-        
+
         try:
-            from agents.tools.calendar_tools import CalendarTools
-            
-            # Create new user-scoped calendar tools instance
-            user_calendar_tools = CalendarTools(user_id=user_id)
-            
+            # Initialize unified GW tools
+            if hasattr(self, "_gw_tools") and self._gw_tools is not None:
+                self._gw_tools.initialize_with_user(user_id)
+
+            # Preserve existing behavior for planning agent calendar tools
+            if hasattr(self, 'daily_planning_agent') and self.daily_planning_agent:
+                self.daily_planning_agent.initialize_calendar_tools_with_user_context(user_id)
+
             # Store user_id for future reference
             self._user_id = user_id
-            self._user_calendar_tools = user_calendar_tools
-            
-            print(f"✅ Successfully created user-scoped calendar tools for user: {user_id}")
-            print(f"   Calendar service initialized with user context: {user_calendar_tools.user_id is not None}")
-            
+
+            print(f"✅ User-scoped Google Workspace tools initialized for user: {user_id}")
+
         except Exception as e:
             print(f"❌ Error updating tools with user context: {e}")
             # Continue with existing tools if update fails
@@ -211,22 +232,17 @@ You are always listening and ready to help - no activation required.
         print(f"🔧 Updating tools with user-specific credentials for user: {user_id} (async)")
         
         try:
-            from agents.tools.calendar_tools import CalendarTools
-            
-            # Run tool initialization in executor to avoid blocking the event loop
+            # Initialize existing GW tools instance in-place to preserve bound tool methods
             import asyncio
-            
-            def _init_tools():
-                return CalendarTools(user_id=user_id)
-            
-            # Create user-scoped calendar tools instance in background thread
-            user_calendar_tools = await asyncio.get_event_loop().run_in_executor(
-                None, _init_tools
-            )
-            
+
+            def _init_in_place():
+                self._gw_tools.initialize_with_user(user_id)
+                return True
+
+            await asyncio.get_event_loop().run_in_executor(None, _init_in_place)
+
             # Store user_id for future reference
             self._user_id = user_id
-            self._user_calendar_tools = user_calendar_tools
             
             # Also initialize calendar tools for the daily planning agent
             if hasattr(self, 'daily_planning_agent') and self.daily_planning_agent:
@@ -237,8 +253,12 @@ You are always listening and ready to help - no activation required.
                 if hasattr(self.briefing_workflow, 'initialize_services_with_user_context'):
                     self.briefing_workflow.initialize_services_with_user_context(user_id)
             
-            print(f"✅ Successfully created user-scoped calendar tools for user: {user_id} (async)")
-            print(f"   Calendar service initialized with user context: {user_calendar_tools.user_id is not None}")
+            print(f"✅ Successfully initialized user-scoped Google Workspace tools for user: {user_id} (async)")
+            try:
+                initialized = bool(getattr(self._gw_tools, 'user_id', None))
+            except Exception:
+                initialized = False
+            print(f"   Tools initialized with user context: {initialized}")
             
         except Exception as e:
             print(f"❌ Error updating tools with user context (async): {e}")

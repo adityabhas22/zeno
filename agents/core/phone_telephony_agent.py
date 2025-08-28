@@ -26,7 +26,7 @@ from livekit.agents import Agent, AgentSession, StopResponse, ChatContext, ChatM
 from livekit.plugins import openai, deepgram, cartesia, silero, noise_cancellation
 
 from config.settings import get_settings
-from agents.core.workspace_agent import get_workspace_tools
+from agents.tools.google_workspace_tools import GoogleWorkspaceTools
 from agents.core.daily_planning_agent import DailyPlanningAgent
 from agents.workflows.morning_briefing import MorningBriefingWorkflow
 
@@ -70,9 +70,29 @@ class PhoneTelephonyAgent(Agent):
         
         # Collect all tools before calling super().__init__
         all_tools = []
-        
-        # Add Google Workspace tools
-        all_tools.extend(get_workspace_tools())
+
+        # Add Google Workspace tools (per-user; will be initialized when user context is known)
+        self._gw_tools = GoogleWorkspaceTools()
+        all_tools.extend([
+            # Calendar
+            self._gw_tools.create_calendar_event,
+            self._gw_tools.list_calendar_events,
+            self._gw_tools.get_today_schedule,
+            self._gw_tools.check_calendar_conflicts,
+            self._gw_tools.get_upcoming_events,
+            # Gmail
+            self._gw_tools.draft_email,
+            self._gw_tools.send_email,
+            self._gw_tools.search_email,
+            self._gw_tools.get_last_unread_email,
+            self._gw_tools.get_email,
+            self._gw_tools.mark_email_as_read,
+            # Drive/Docs
+            self._gw_tools.create_doc,
+            self._gw_tools.append_to_doc,
+            # Utility
+            self._gw_tools.progress_note,
+        ])
         
         super().__init__(
             instructions="""

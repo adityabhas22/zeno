@@ -64,7 +64,7 @@ def check_credentials():
 
 def main():
     """Run the Zeno voice agent."""
-    print("🤖 Starting Zeno Voice Agent...")
+    print("🤖 Starting Zeno Smart Worker (web/telephony routing)...")
     print("=" * 50)
     
     # Check environment
@@ -87,7 +87,7 @@ def main():
     print("\n" + "=" * 50)
     
     try:
-        # Run the agent using LiveKit's CLI
+        # Run the smart entrypoint using LiveKit's CLI
         from livekit import agents
         agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=web_entrypoint))
         
