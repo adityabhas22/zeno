@@ -24,7 +24,9 @@ from livekit.plugins import deepgram, openai, silero
 
 from config.settings import get_settings
 from agents.core.agent_router import get_agent_router
-from tools.postcall import handle_call_end
+from core.storage import session_scope, User
+from agents.core.web_entrypoint import ConversationTranscript
+import asyncio
 
 
 async def smart_entrypoint(ctx: agents.JobContext):
@@ -57,6 +59,12 @@ async def smart_entrypoint(ctx: agents.JobContext):
     if target_identity is not None:
         room_options.participant_identity = target_identity
 
+    # Attach agent reference to userdata for later tool initialization
+    try:
+        setattr(userdata_state, "_agent_ref", agent)
+    except Exception:
+        pass
+
     # Create session with appropriate agent and state
     session = AgentSession(
         stt=deepgram.STT(model="nova-3", language="en"),
@@ -73,26 +81,98 @@ async def smart_entrypoint(ctx: agents.JobContext):
     # Handle participant events for dynamic targeting
     @ctx.room.on("participant_connected")
     def on_participant_connected(participant):
+        print("🎯 PARTICIPANT CONNECTED EVENT FIRED!")
         print(f"Participant {participant.identity} connected")
-        # Reset assistant state for new participants
-        if hasattr(session, 'userdata') and session.userdata:
+
+        # Extract user ID from participant identity (format: "user-{clerk_user_id}")
+        clerk_user_id = None
+        if participant.identity and participant.identity.startswith("user-"):
+            clerk_user_id = participant.identity[5:]
+            print(f"🔍 Extracted Clerk User ID: {clerk_user_id}")
+
+        # Look up user details in DB (best-effort)
+        user_data = {}
+        if clerk_user_id:
+            try:
+                with session_scope() as db:
+                    db_user = db.query(User).filter(User.clerk_user_id == clerk_user_id).first()
+                    if db_user:
+                        first_name = getattr(db_user, 'first_name', None) or ''
+                        last_name = getattr(db_user, 'last_name', None) or ''
+                        email = getattr(db_user, 'email', None)
+                        timezone = getattr(db_user, 'timezone', None) or "UTC"
+                        preferences = getattr(db_user, 'preferences', None) or {}
+                        user_data = {
+                            "user_id": clerk_user_id,
+                            "user_name": f"{first_name} {last_name}".strip() or "User",
+                            "user_email": email,
+                            "timezone": timezone,
+                            "preferences": preferences,
+                        }
+                        print(f"✅ Found user in database: {user_data}")
+                    else:
+                        print(f"❌ User {clerk_user_id} not found in database")
+            except Exception as e:
+                print(f"❌ Error looking up user in database: {e}")
+
+        # Also parse participant metadata
+        user_ctx_from_metadata = {}
+        print("🔍 CHECKING PARTICIPANT METADATA:")
+        print(f"  Participant metadata: {participant.metadata}")
+        try:
+            if participant.metadata:
+                user_ctx_from_metadata = json.loads(participant.metadata)
+                print(f"✅ User context from metadata: {user_ctx_from_metadata}")
+        except Exception as e:
+            print(f"❌ Error parsing participant metadata: {e}")
+
+        # Merge contexts (DB takes priority)
+        final_user_context = {**user_ctx_from_metadata, **user_data}
+
+        # Update session userdata
+        if final_user_context and getattr(session, 'userdata', None):
+            session.userdata.user_id = final_user_context.get("user_id")
+            session.userdata.session_id = final_user_context.get("session_id")
+            session.userdata.user_name = final_user_context.get("user_name", "User")
+            session.userdata.user_email = final_user_context.get("user_email")
+            session.userdata.timezone = final_user_context.get("timezone")
+            session.userdata.preferences = final_user_context.get("preferences", {})
+
+            # Initialize transcript collector and legacy buffer for compatibility
+            try:
+                session.userdata.conversation_transcript = ConversationTranscript()
+            except Exception:
+                session.userdata.conversation_transcript = None
+            try:
+                session.userdata.chat_buffer = []
+            except Exception:
+                pass
+
+            print("✅ Updated session userdata with combined user context:")
+            print(f"   User: {session.userdata.user_name} ({session.userdata.user_email})")
+            print(f"   User ID: {session.userdata.user_id}")
+            print(f"   Timezone: {session.userdata.timezone}")
+            print(f"   Preferences: {session.userdata.preferences}")
+
+            # For telephony, ensure starts inactive
             if connection_type == "telephony":
-                session.userdata.zeno_active = False  # Phone agent starts inactive
-            # Main agent doesn't have activation state - always ready
+                setattr(session.userdata, 'zeno_active', False)
+
+            # Initialize per-user Google tools asynchronously
+            user_id = final_user_context.get("user_id")
+            agent_ref = getattr(session.userdata, "_agent_ref", None)
+            if user_id and agent_ref is not None:
+                if hasattr(agent_ref, 'async_update_tools_with_user_context'):
+                    asyncio.create_task(agent_ref.async_update_tools_with_user_context(user_id))
+                elif hasattr(agent_ref, 'update_tools_with_user_context'):
+                    print("⚠️ Using synchronous tool update - may block briefly")
+                    agent_ref.update_tools_with_user_context(user_id)
 
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant):
         print(f"Participant {participant.identity} disconnected")
-        # Reset assistant state when participants disconnect
-        if hasattr(session, 'userdata') and session.userdata:
-            if connection_type == "telephony":
-                session.userdata.zeno_active = False
-        
-        # Handle cleanup with enhanced Zeno features
-        try:
-            handle_call_end(session, participant)
-        except Exception as e:
-            print(f"Error in handle_call_end: {e}")
+        if hasattr(session, 'userdata') and session.userdata and connection_type == "telephony":
+            session.userdata.zeno_active = False
 
     # Start the session
     await session.start(
@@ -100,6 +180,13 @@ async def smart_entrypoint(ctx: agents.JobContext):
         agent=agent,
         room_input_options=room_options,
     )
+
+    # Post-start participant check (handle already-connected participants)
+    print("🔍 POST-START PARTICIPANT CHECK:")
+    print(f"  Remote participants count: {len(ctx.room.remote_participants)}")
+    for p in ctx.room.remote_participants.values():
+        print(f"  Found participant: {p.identity}")
+        on_participant_connected(p)
 
     # Generate appropriate greeting based on connection type
     greeting_instructions = router.get_greeting_for_connection(connection_type, metadata)
