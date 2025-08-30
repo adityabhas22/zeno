@@ -7,16 +7,17 @@ Designed for Clerk authentication integration with focus on:
 - Task management
 - User session tracking
 - Knowledge management for contextual AI
+- Secure integration data storage with encryption
 """
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from sqlalchemy import (
-    Column, String, Text, DateTime, Date, Boolean, Integer, 
+    Column, String, Text, DateTime, Date, Boolean, Integer,
     ForeignKey, JSON, Float, Index, UniqueConstraint
 )
 from sqlalchemy.ext.declarative import declarative_base
@@ -317,39 +318,95 @@ class Document(Base):
 
 class Integration(Base):
     """
-    External service integrations.
-    
+    External service integrations with secure encrypted storage.
+
     Stores OAuth tokens and configuration for Google Workspace, etc.
+    Sensitive data is encrypted at rest using AES-256-GCM.
     """
     __tablename__ = "integrations"
-    
+
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.clerk_user_id"), nullable=False, index=True)
-    
+
     # Integration details
     integration_type = Column(String, nullable=False)  # "google_workspace", "weather", etc.
     provider = Column(String, nullable=False)
-    
-    # Authentication data (encrypted in production)
-    auth_tokens = Column(JSON)         # OAuth tokens, API keys
-    config_data = Column(JSON, default=dict)  # Provider-specific config
-    
+
+    # Encrypted authentication data - stored as base64-encoded encrypted JSON
+    encrypted_auth_tokens = Column(Text)         # Encrypted OAuth tokens, API keys
+    encrypted_config_data = Column(Text)         # Encrypted provider-specific config
+
     # Status
     is_active = Column(Boolean, default=True)
     token_expires_at = Column(DateTime)
     last_sync_at = Column(DateTime)
-    
+
     # Tracking
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     user = relationship("User", back_populates="integrations")
-    
+
     __table_args__ = (
         Index("idx_integrations_user_type", "user_id", "integration_type"),
         UniqueConstraint("user_id", "integration_type", "provider", name="uq_user_integration"),
     )
+
+    @property
+    def auth_tokens(self) -> Optional[Dict[str, Any]]:
+        """Get decrypted auth tokens."""
+        encrypted_data = getattr(self, 'encrypted_auth_tokens', None)
+        if not encrypted_data:
+            return None
+        try:
+            from .encryption import decrypt_integration_data
+            return decrypt_integration_data(encrypted_data)
+        except Exception as e:
+            print(f"❌ Failed to decrypt auth tokens for integration {self.id}: {e}")
+            return None
+
+    @auth_tokens.setter
+    def auth_tokens(self, value: Optional[Dict[str, Any]]) -> None:
+        """Set encrypted auth tokens."""
+        print(f"🔐 MODEL Property setter called with value: {type(value)}")
+        import traceback
+        print(f"🔐 MODEL Call stack: {traceback.format_stack()[-3].strip()}")
+        if value is None:
+            self.__dict__['encrypted_auth_tokens'] = None
+            self.__dict__['auth_tokens'] = None  # Clear old field too
+        else:
+            from .encryption import encrypt_integration_data
+            encrypted = encrypt_integration_data(value)
+            self.__dict__['encrypted_auth_tokens'] = encrypted
+            self.__dict__['auth_tokens'] = None  # Clear old field
+            print(f"✅ MODEL Encrypted auth tokens: {len(encrypted)} chars")
+
+    @property
+    def config_data(self) -> Dict[str, Any]:
+        """Get decrypted config data."""
+        encrypted_data = getattr(self, 'encrypted_config_data', None)
+        if not encrypted_data:
+            return {}
+        try:
+            from .encryption import decrypt_integration_data
+            return decrypt_integration_data(encrypted_data)
+        except Exception as e:
+            print(f"❌ Failed to decrypt config data for integration {self.id}: {e}")
+            return {}
+
+    @config_data.setter
+    def config_data(self, value: Optional[Dict[str, Any]]) -> None:
+        """Set encrypted config data."""
+        if value is None or value == {}:
+            self.__dict__['encrypted_config_data'] = None
+            self.__dict__['config_data'] = None  # Clear old field too
+        else:
+            from .encryption import encrypt_integration_data
+            encrypted = encrypt_integration_data(value)
+            self.__dict__['encrypted_config_data'] = encrypted
+            self.__dict__['config_data'] = None  # Clear old field
+            print(f"✅ Encrypted config data: {len(encrypted)} chars")
 
 
 class Notification(Base):

@@ -73,17 +73,12 @@ def get_user_credentials(user_id: str, scopes: Iterable[str]) -> Optional[Creden
                             "token": credentials.token,
                             "refresh_token": credentials.refresh_token,
                         })
-                    
-                    # Update integration using db.query().update()
-                    db.query(Integration).filter(
-                        Integration.user_id == user_id,
-                        Integration.integration_type == "google_workspace"
-                    ).update({
-                        "auth_tokens": auth_tokens,
-                        "token_expires_at": credentials.expiry,
-                        "last_sync_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow()
-                    })
+
+                    # Update integration using object properties (encryption handled automatically)
+                    integration.auth_tokens = auth_tokens
+                    setattr(integration, 'token_expires_at', credentials.expiry)
+                    setattr(integration, 'last_sync_at', datetime.utcnow())
+                    setattr(integration, 'updated_at', datetime.utcnow())
                     
                     db.commit()
                     print(f"✅ Token refreshed for user {user_id}")

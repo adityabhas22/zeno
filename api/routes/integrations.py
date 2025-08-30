@@ -285,30 +285,31 @@ async def handle_google_oauth_callback(
             Integration.user_id == user_id,
             Integration.integration_type == "google_workspace"
         ).first()
-        
+
         if integration:
-            # Update existing using db.query().update()
-            db.query(Integration).filter(
-                Integration.user_id == user_id,
-                Integration.integration_type == "google_workspace"
-            ).update({
-                "auth_tokens": cred_data,
-                "is_active": True,
-                "token_expires_at": credentials.expiry,
-                "last_sync_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
-            })
+            # Update existing integration
+            print(f"🔐 OAuth Callback: Updating existing integration {integration.id}")
+            print(f"🔐 OAuth Callback: Setting auth_tokens with data type: {type(cred_data)}")
+            integration.auth_tokens = cred_data
+            print(f"🔐 OAuth Callback: After setting, encrypted_auth_tokens: {getattr(integration, 'encrypted_auth_tokens', 'NOT SET')}")
+            setattr(integration, 'is_active', True)
+            setattr(integration, 'token_expires_at', credentials.expiry)
+            setattr(integration, 'last_sync_at', datetime.utcnow())
+            setattr(integration, 'updated_at', datetime.utcnow())
         else:
-            # Create new
+            # Create new integration
+            print("🔐 OAuth Callback: Creating new integration")
+            print(f"🔐 OAuth Callback: Setting auth_tokens with data type: {type(cred_data)}")
             integration = Integration(
                 user_id=user_id,
                 integration_type="google_workspace",
                 provider="google",
-                auth_tokens=cred_data,
+                auth_tokens=cred_data,  # This will be encrypted by the property setter
                 is_active=True,
                 token_expires_at=credentials.expiry,
                 last_sync_at=datetime.utcnow()
             )
+            print(f"🔐 OAuth Callback: After creating, encrypted_auth_tokens: {getattr(integration, 'encrypted_auth_tokens', 'NOT SET')}")
             db.add(integration)
         
         db.commit()
@@ -432,17 +433,12 @@ async def refresh_google_token(
             "token": credentials.token,
             "refresh_token": credentials.refresh_token,
         })
-        
-        # Update integration using db.query().update()
-        db.query(Integration).filter(
-            Integration.user_id == clerk_user_id,
-            Integration.integration_type == "google_workspace"
-        ).update({
-            "auth_tokens": auth_tokens,
-            "token_expires_at": credentials.expiry,
-            "last_sync_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
-        })
+
+        # Update integration using object properties (encryption handled automatically)
+        integration.auth_tokens = auth_tokens
+        setattr(integration, 'token_expires_at', credentials.expiry)
+        setattr(integration, 'last_sync_at', datetime.utcnow())
+        setattr(integration, 'updated_at', datetime.utcnow())
         
         db.commit()
         

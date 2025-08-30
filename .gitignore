@@ -1,120 +1,26 @@
-# ------------------------------------------------------------------
-# Root .gitignore — Node + Python + iOS (Xcode) monorepo
-# ------------------------------------------------------------------
+# Zeno Project .gitignore
 
-# --------------------
-# OS / Editor cruft
-# --------------------
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Icon?
-*.swp
-*.swo
-*.orig
-*.rej
-*.bak
-*.tmp
-*.temp
-*.log
-logs/
-*.pid
-*.seed
-*.pid.lock
-
-# VSCode (keep recommended files if you want)
-.vscode/*
-!.vscode/extensions.json
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-
-# JetBrains
-.idea/
-
-# ------------------------------------------------------------------
-# ENV / Secrets
-# ------------------------------------------------------------------
+# Environment variables
 .env
-.env.*
-!.env.example
 .env.local
-.envrc
-*.pem
+.env.production
+
+# Credentials and secrets
+credentials/
 *.key
-*.p12
-*.cer
-*.cert
-*.crt
-*.der
-*.mobileprovision
-*.keystore
-*.jks
-.secrets/
-.secret/
-**/credentials.json
-**/service-account.json
+*.pem
+*.p8
 
-# ------------------------------------------------------------------
-# Node / JavaScript / TypeScript
-# ------------------------------------------------------------------
-node_modules/
-bower_components/
-jspm_packages/
-.pnpm-store/
-.pnp.*
-.yarn/*
-!.yarn/patches/
-!.yarn/plugins/
-!.yarn/releases/
-!.yarn/sdks/
-!.yarn/versions/
+# Logs and data
+logs/
+data/
+*.log
 
-# Package managers' logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Build outputs / caches
-dist/
-build/
-lib/
-.out/
-out/
-.storybook-out/
-.storybook-cache/
-.cache/
-.parcel-cache/
-.next/
-.nuxt/
-.svelte-kit/
-.fusebox/
-.turbo/
-.vercel/
-.netlify/
-coverage/
-.nyc_output/
-.eslintcache
-.stylelintcache
-*.tsbuildinfo
-
-# Framework-specific
-expo/*
-!.expo/README.md
-
-# ------------------------------------------------------------------
 # Python
-# ------------------------------------------------------------------
-# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -128,136 +34,46 @@ parts/
 sdist/
 var/
 wheels/
-share/python-wheels/
-pip-wheel-metadata/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-pytestdebug.log
-.pytest_cache/
-.coverage.*
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pyre/
-.mypy_cache/
-.ruff_cache/
-.dmypy.json
-dmypy.json
-
-# Jupyter
-.ipynb_checkpoints
-profile_default/
-ipython_config.py
-
-# Virtual Envs
-.venv/
+# Virtual environments
 venv/
-ENV/
 env/
+ENV/
 env.bak/
 venv.bak/
 
-# pyenv
-.python-version
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# Poetry
-# (keep poetry.lock committed; ignore its cache)
-.poetry/
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# PDM
-.pdm.toml
-__pypackages__/
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
-# ------------------------------------------------------------------
-# iOS / Xcode / Swift / Objective-C
-# ------------------------------------------------------------------
-# Xcode
-DerivedData/
-*.xcuserstate
-*.xcscmblueprint
-*.xccheckout
-*.moved-aside
-*.xcuserdatad
-xcuserdata/
-*.xcworkspace/xcuserdata/
-# Keep workspaces; ignore user data only
-# (If you truly want to ignore entire workspaces, uncomment below)
-# *.xcworkspace
+# Docker
+.dockerignore
 
-# Build artifacts
-build/
-*.ipa
-*.dSYM
-*.dSYM.zip
-*.dSYM.tar.gz
-
-# Swift Package Manager
-.build/
-.swiftpm/xcode/    # SPM Xcode integration artifacts
-
-# CocoaPods
-Pods/
-# If you prefer committing Pods for reproducibility, comment the line above.
-
-# Carthage
-Carthage/Build/
-
-# Fastlane
-fastlane/report.xml
-fastlane/Preview.html
-fastlane/screenshots
-fastlane/test_output
-fastlane/readme.md
-
-# Provisioning & signing handled above in Secrets
-
-# ------------------------------------------------------------------
-# Images / media outputs
-# ------------------------------------------------------------------
-*.iml
-*.tiff
-*.tif
-*.psd
-*.ai
-*.sketch~
-*.sketchplugin
-
-# ------------------------------------------------------------------
-# Containers / Devops (optional)
-# ------------------------------------------------------------------
-.docker/
-docker-compose.override.yml
-terraform.tfstate
-terraform.tfstate.*
-.terraform/
-*.tfvars
-*.tfvars.json
-
-# ------------------------------------------------------------------
-# Misc caches
-# ------------------------------------------------------------------
-*.sass-cache
-.cache-loader/
+# Temporary files
+*.tmp
+*.temp
 .cache/
-tmp/
-temp/
+
+# LiveKit
+*.room

@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     app_name: str = "Zeno"
     version: str = "1.0.0"
     debug: bool = False
-    environment: str = "development"
+    environment: str = "production"
     
     # API Configuration
     api_host: str = "0.0.0.0"
@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # Clerk Authentication
     clerk_secret_key: str = ""
     clerk_webhook_secret: str = "dev"
+    clerk_domain: Optional[str] = "steady-tapir-30.clerk.accounts.dev"  # e.g., "your-app.clerk.accounts.dev"
     
     # Google Workspace (optional)
     google_client_id: str = ""
@@ -94,6 +95,9 @@ class Settings(BaseSettings):
     # Daily Planning
     default_briefing_time: str = "08:00"
     max_daily_tasks: int = 20
+
+    # Encryption
+    encryption_password: Optional[str] = None  # For encrypting sensitive integration data
 
 
 @lru_cache()
