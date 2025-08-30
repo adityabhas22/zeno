@@ -204,14 +204,17 @@ final class AppViewModel {
         )
     }
 
+    private(set) var statusMessage: String?
+
     private func getConnection() async throws -> TokenService.ConnectionDetails {
         let roomName = "room-\(Int.random(in: 1000 ... 9999))"
         let participantName = "user-\(Int.random(in: 1000 ... 9999))"
 
-        return try await tokenService.fetchConnectionDetails(
+        let details = try await tokenService.fetchConnectionDetails(
             roomName: roomName,
             participantName: participantName
-        )!
+        )
+        return details
     }
 
     func disconnect() async {

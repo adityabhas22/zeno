@@ -1,4 +1,5 @@
 import SwiftUI
+import Clerk
 
 struct AppView: View {
     @Environment(AppViewModel.self) private var viewModel
@@ -9,7 +10,33 @@ struct AppView: View {
 
     @Namespace private var namespace
 
+    @Environment(\.clerk) private var clerk
+    @State private var authIsPresented = false
+    
     var body: some View {
+        VStack {
+              if clerk.user != nil {
+                content()
+                UserButton()
+                  .frame(width: 36, height: 36)
+              } else {
+                Button("Sign in") {
+                  authIsPresented = true
+                }
+              }
+            }
+            .sheet(isPresented: $authIsPresented) {
+              AuthView()
+            }
+            .task(id: clerk.user?.id) {
+                if let id = clerk.user?.id {
+                    print("Clerk user id:", id)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func content() -> some View {
         ZStack(alignment: .top) {
             if viewModel.isInteractive {
                 interactions()
@@ -18,6 +45,15 @@ struct AppView: View {
             }
 
             errors()
+        }
+        .overlay(alignment: .topLeading) {
+            if let status = viewModel.statusMessage {
+                Text(status)
+                    .font(.caption)
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: .capsule)
+                    .padding()
+            }
         }
         .environment(\.namespace, namespace)
         #if os(visionOS)

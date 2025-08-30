@@ -26,7 +26,7 @@ app = FastAPI(
 )
 
 # Configure CORS
-# Allow localhost origins for frontend development
+# Allow localhost origins for frontend development and ngrok for iOS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -36,10 +36,13 @@ app.add_middleware(
         "http://127.0.0.1:5174",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        # Allow ngrok domains for iOS app
+        "https://*.ngrok-free.app",
+        "https://d95f3ba12854.ngrok-free.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "Authorization"],
 )
 
 # Setup authentication middleware

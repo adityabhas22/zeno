@@ -11,7 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from api.middleware.clerk_auth import get_current_user_id, get_current_user
+from api.middleware.clerk_auth import (
+    get_current_user_id,
+    get_current_user,
+)
 from core.storage import get_database_session, User, UserSession, session_scope
 from config.settings import get_settings
 
@@ -39,7 +42,7 @@ class AgentSessionResponse(BaseModel):
 @router.post("/create", response_model=AgentSessionResponse)
 async def create_agent_session(
     request: AgentSessionRequest,
-    clerk_user_id: str = Depends(get_current_user_id),
+    user: dict = Depends(get_current_user),
     db: Session = Depends(get_database_session)
 ):
     """
@@ -51,15 +54,25 @@ async def create_agent_session(
     3. Generates a LiveKit room and token with user metadata
     4. Returns connection details for the frontend
     """
-    # clerk_user_id is now passed directly from the dependency
+    # Extract user info from Clerk JWT (required)
+    clerk_user_id = str(user.get("clerk_user_id")) if user.get("clerk_user_id") else str(uuid.uuid4())
+    user_email = user.get("email") or f"{clerk_user_id}@example.local"
+    first_name = user.get("first_name")
+    last_name = user.get("last_name")
     
     # Validate user exists in our database
     db_user = db.query(User).filter(User.clerk_user_id == clerk_user_id).first()
     if not db_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found in database. Please ensure user is properly registered."
+        # Auto-upsert user
+        db_user = User(
+            clerk_user_id=clerk_user_id,
+            email=user_email,
+            first_name=first_name,
+            last_name=last_name,
         )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
     
     # Create UserSession record
     session_id = str(uuid.uuid4())
@@ -107,7 +120,10 @@ async def create_agent_session(
         # Cast to optional strings to avoid SQLAlchemy Column type issues
         first_name = cast(Optional[str], getattr(db_user, "first_name", None))
         last_name = cast(Optional[str], getattr(db_user, "last_name", None))
-        user_name = f"{first_name or ''} {last_name or ''}".strip() or "User"
+        username_from_jwt = None
+        if isinstance(user, dict):
+            username_from_jwt = (user.get("full_payload", {}) or {}).get("username")
+        user_name = f"{first_name or ''} {last_name or ''}".strip() or username_from_jwt or "User"
         
         # Enhanced user preferences with defaults
         user_prefs = cast(Optional[dict], getattr(db_user, "preferences", None)) or {}

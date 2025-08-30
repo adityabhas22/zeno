@@ -1,10 +1,13 @@
 import SwiftUI
+import Clerk
 
 /// The initial view that is shown when the app is not connected to the server.
 struct StartView: View {
     @Environment(AppViewModel.self) private var viewModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
+    @Environment(\.clerk) private var clerk
+    @State private var authIsPresented = false
+    
     @Namespace private var button
 
     var body: some View {
@@ -55,6 +58,8 @@ struct StartView: View {
 
     @ViewBuilder
     private func connectButton() -> some View {
+        // Button is always enabled for vanilla LiveKit connection
+        let disabled = false
         AsyncButton(action: viewModel.connect) {
             HStack {
                 Spacer()
@@ -80,6 +85,7 @@ struct StartView: View {
         #else
         .buttonStyle(ProminentButtonStyle())
         #endif
+        .disabled(disabled)
     }
 }
 

@@ -86,6 +86,9 @@
         }
       }
     },
+    "Sign in" : {
+
+    },
     "warning.reconnecting" : {
       "extractionState" : "manual",
       "localizations" : {

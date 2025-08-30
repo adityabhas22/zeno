@@ -1,15 +1,25 @@
 import LiveKit
 import SwiftUI
+import Clerk
 
 @main
 struct VoiceAgentApp: App {
     // Create the root view model
     private let viewModel = AppViewModel()
-
+    @State private var clerk = Clerk.shared
+    
     var body: some Scene {
         WindowGroup {
             AppView()
                 .environment(viewModel)
+                .environment(\.clerk, clerk)
+                .task {
+                    // Use environment variable for Clerk publishable key
+                    let publishableKey = Bundle.main.object(forInfoDictionaryKey: "ClerkPublishableKey") as? String
+                        ?? "pk_test_c3RlYWR5LXRhcGlyLTMwLmNsZXJrLmFjY291bnRzLmRldiQ"
+                    clerk.configure(publishableKey: publishableKey)
+                    try? await clerk.load()
+                  }
         }
         #if os(visionOS)
         .windowStyle(.plain)
