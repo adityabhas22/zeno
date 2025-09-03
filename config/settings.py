@@ -28,12 +28,14 @@ class Settings(BaseSettings):
     app_name: str = "Zeno"
     version: str = "1.0.0"
     debug: bool = False
-    environment: str = "development"
+    environment: str = "production"
     
     # API Configuration
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     api_workers: int = 1
+    api_base_url: str = "http://localhost:8000"
+    frontend_url: str = "http://localhost:3000"
     
     # Database (optional with default)
     database_url: str = "sqlite:///./zeno.db"
@@ -51,6 +53,11 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "dev-secret-key-change-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24 hours
+    
+    # Clerk Authentication
+    clerk_secret_key: str = ""
+    clerk_webhook_secret: str = "dev"
+    clerk_domain: Optional[str] = "steady-tapir-30.clerk.accounts.dev"  # e.g., "your-app.clerk.accounts.dev"
     
     # Google Workspace (optional)
     google_client_id: str = ""
@@ -77,10 +84,20 @@ class Settings(BaseSettings):
     agent_max_tool_steps: int = 12
     agent_preemptive_generation: bool = False
     agent_allow_interruptions: bool = True
-    
+
+    # Timeout Configuration (to prevent Deepgram timeouts)
+    stt_timeout: float = 30.0  # STT operation timeout
+    llm_timeout: float = 45.0  # LLM operation timeout
+    tool_call_timeout: float = 60.0  # Tool call timeout
+    session_timeout: float = 300.0  # Session timeout (5 minutes)
+    progress_note_interval: float = 15.0  # Send progress notes every 15 seconds
+
     # Daily Planning
     default_briefing_time: str = "08:00"
     max_daily_tasks: int = 20
+
+    # Encryption
+    encryption_password: Optional[str] = None  # For encrypting sensitive integration data
 
 
 @lru_cache()

@@ -19,10 +19,23 @@ from core.integrations.google.drive import DriveService
 class CalendarTools:
     """Calendar management tools for Zeno agent."""
     
-    def __init__(self):
-        self.calendar_service = CalendarService()
-        self.gmail_service = GmailService()
-        self.drive_service = DriveService()
+    def __init__(self, user_id: Optional[str] = None):
+        """Initialize calendar tools with optional user-specific credentials.
+        
+        Args:
+            user_id: Clerk user ID for user-specific Google credentials
+        """
+        try:
+            self.calendar_service = CalendarService(user_id=user_id)
+            self.gmail_service = GmailService(user_id=user_id)
+            self.drive_service = DriveService(user_id=user_id)
+            self.user_id = user_id
+        except Exception as e:
+            # Do not fallback to global credentials
+            raise RuntimeError(
+                f"Failed to initialize user-specific Google services for user {user_id}: {e}. "
+                "Please connect Google in settings."
+            )
 
     @function_tool()
     async def create_calendar_event(

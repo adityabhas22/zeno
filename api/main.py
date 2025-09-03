@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from config.settings import get_settings
 from api.middleware.auth import setup_auth_middleware
-from api.routes import auth, tasks, calendar, briefings, agent, ios
+from api.routes import auth, tasks, calendar, briefings, agent, agent_session, integrations, ios, clerk_webhooks, user
 
 # Initialize settings
 settings = get_settings()
@@ -26,12 +26,23 @@ app = FastAPI(
 )
 
 # Configure CORS
+# Allow localhost origins for frontend development and ngrok for iOS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.debug else ["https://your-ios-app-domain.com"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        # Allow ngrok domains for iOS app
+        "https://*.ngrok-free.app",
+        "https://d95f3ba12854.ngrok-free.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "Authorization"],
 )
 
 # Setup authentication middleware
@@ -39,11 +50,15 @@ setup_auth_middleware(app)
 
 # Include routers
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+app.include_router(user.router, prefix="/user", tags=["User"])
 app.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
 app.include_router(calendar.router, prefix="/calendar", tags=["Calendar"])
 app.include_router(briefings.router, prefix="/briefings", tags=["Briefings"])
 app.include_router(agent.router, prefix="/agent", tags=["Agent"])
+app.include_router(agent_session.router, prefix="/agent/session", tags=["Agent Sessions"])
+app.include_router(integrations.router, prefix="/integrations", tags=["Integrations"])
 app.include_router(ios.router, prefix="/ios", tags=["iOS"])
+app.include_router(clerk_webhooks.router, prefix="/webhooks/clerk", tags=["Clerk Webhooks"])
 
 
 @app.get("/")

@@ -11,6 +11,7 @@ from typing import Iterable, Optional, List, Dict, Any
 import pytz
 
 from .oauth import get_service
+from .user_oauth import get_user_service, check_user_has_google_access
 
 CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
@@ -18,8 +19,28 @@ CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 class CalendarService:
     """Google Calendar service with Zeno-specific enhancements."""
     
-    def __init__(self):
-        self.service = get_service("calendar", "v3", CALENDAR_SCOPES)
+    def __init__(self, user_id: Optional[str] = None):
+        """
+        Initialize Calendar service.
+        
+        Args:
+            user_id: If provided, use user-specific credentials. 
+                    If None, falls back to global credentials.
+        """
+        self.user_id = user_id
+        
+        if user_id:
+            if not check_user_has_google_access(user_id, CALENDAR_SCOPES):
+                raise Exception(
+                    f"User {user_id} has not connected their Google account or missing calendar permissions. "
+                    "Please connect your Google account in settings."
+                )
+            self.service = get_user_service(user_id, "calendar", "v3", CALENDAR_SCOPES)
+        else:
+            # Enforce user-scoped credentials only
+            raise RuntimeError(
+                "Google Calendar requires user-scoped credentials. No user context provided."
+            )
     
     def create_event(
         self,

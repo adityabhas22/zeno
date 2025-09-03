@@ -1,0 +1,12 @@
+#include ".env.xcconfig"
+
+PRODUCT_BUNDLE_IDENTIFIER = com.adityabhaskara.voiceassistant
+DEVELOPMENT_TEAM = LHK5K3Q5L9;
+
+// Environment configuration
+LIVEKIT_SANDBOX_ID = aditya-bhaskara-1b7sty
+API_BASE_URL = https://d95f3ba12854.ngrok-free.app/
+CLERK_PUBLISHABLE_KEY = pk_test_c3RlYWR5LXRhcGlyLTMwLmNsZXJrLmFjY291bnRzLmRldiQ
+
+// Make these available to Info.plist
+ClerkPublishableKey = $(CLERK_PUBLISHABLE_KEY)

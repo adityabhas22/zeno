@@ -36,10 +36,24 @@ class WorkspaceAgent(Agent):
             ),
         )
         
-        # Initialize services
-        self.calendar_service = CalendarService()
-        self.gmail_service = GmailService()
-        self.drive_service = DriveService()
+        # Do not initialize default services; require user-scoped services via session context
+        self.calendar_service = None
+        self.gmail_service = None
+        self.drive_service = None
+    
+    def _get_user_service(self, context: RunContext, service_name: str):
+        """Get user-specific service if available, otherwise return default service."""
+        # Enforce user-scoped services only
+        if (hasattr(context, 'session') and 
+            hasattr(context.session, 'userdata') and 
+            hasattr(context.session.userdata, '_agent_ref')):
+            agent = context.session.userdata._agent_ref
+            if hasattr(agent, '_user_calendar_tools') and agent._user_calendar_tools:
+                user_service = getattr(agent._user_calendar_tools, service_name, None)
+                if user_service:
+                    print(f"🔄 Using user-specific {service_name} for request")
+                    return user_service
+        raise RuntimeError("Google Workspace is not connected for this user. Please connect in settings.")
 
     # Calendar Tools
     @function_tool()
@@ -65,7 +79,8 @@ class WorkspaceAgent(Agent):
         Returns:
             A dictionary with event id and link
         """
-        return self.calendar_service.create_event(
+        calendar_service = self._get_user_service(context, 'calendar_service')
+        return calendar_service.create_event(
             title=title,
             start_iso=start_iso,
             end_iso=end_iso,
@@ -84,7 +99,8 @@ class WorkspaceAgent(Agent):
         max_results: int = 10,
     ) -> List[dict[str, Any]]:
         """List upcoming calendar events within an optional time range or query."""
-        return self.calendar_service.list_events(
+        calendar_service = self._get_user_service(context, 'calendar_service')
+        return calendar_service.list_events(
             time_min_iso=time_min_iso,
             time_max_iso=time_max_iso,
             query=query,
@@ -102,7 +118,8 @@ class WorkspaceAgent(Agent):
         cc: Optional[List[str]] = None,
     ) -> dict[str, Any]:
         """Create an email draft. Use 'send_email' to send it."""
-        return self.gmail_service.draft_email(to=to, subject=subject, body=body, cc=cc)
+        gmail_service = self._get_user_service(context, 'gmail_service')
+        return gmail_service.draft_email(to=to, subject=subject, body=body, cc=cc)
 
     @function_tool()
     async def send_email(
@@ -115,7 +132,8 @@ class WorkspaceAgent(Agent):
         cc: Optional[List[str]] = None,
     ) -> dict[str, Any]:
         """Send an email. Either provide a draft_id or to/subject/body (and cc)."""
-        return self.gmail_service.send_email(
+        gmail_service = self._get_user_service(context, 'gmail_service')
+        return gmail_service.send_email(
             draft_id=draft_id, to=to, subject=subject, body=body, cc=cc
         )
 
@@ -133,20 +151,24 @@ class WorkspaceAgent(Agent):
         """
         # Heuristic: treat as natural if it lacks ':' operators
         if ":" in query:
-            return self.gmail_service.search_email(query=query, max_results=max_results)
-        return self.gmail_service.search_email_natural(
+            gmail_service = self._get_user_service(context, 'gmail_service')
+            return gmail_service.search_email(query=query, max_results=max_results)
+        gmail_service = self._get_user_service(context, 'gmail_service')
+        return gmail_service.search_email_natural(
             natural_query=query, max_results=max_results
         )
 
     @function_tool()
     async def get_last_unread_email(self, context: RunContext) -> dict[str, Any] | None:
         """Fetch the last unread email's from/subject/snippet for quick summary."""
-        return self.gmail_service.get_last_unread_email()
+        gmail_service = self._get_user_service(context, 'gmail_service')
+        return gmail_service.get_last_unread_email()
 
     @function_tool()
     async def get_email(self, context: RunContext, message_id: str) -> dict[str, Any]:
         """Get a specific email by Gmail message ID, returning a voice-friendly text body."""
-        email = self.gmail_service.get_email_by_id(message_id)
+        gmail_service = self._get_user_service(context, 'gmail_service')
+        email = gmail_service.get_email_by_id(message_id)
         # Compact the text to avoid reading long URLs or IDs
         compact = self._compact_text(email.get("text", ""))
         email["text"] = compact
@@ -155,7 +177,8 @@ class WorkspaceAgent(Agent):
     @function_tool()
     async def mark_email_as_read(self, context: RunContext, message_id: str) -> None:
         """Mark an email as read by Gmail message ID."""
-        self.gmail_service.mark_as_read(message_id)
+        gmail_service = self._get_user_service(context, 'gmail_service')
+        gmail_service.mark_as_read(message_id)
 
     # Document Tools
     @function_tool()
@@ -166,7 +189,8 @@ class WorkspaceAgent(Agent):
         initial_text: Optional[str] = None
     ) -> dict[str, Any]:
         """Create a Google Doc with an optional initial body of text."""
-        return self.drive_service.create_doc(title=title, initial_text=initial_text)
+        drive_service = self._get_user_service(context, 'drive_service')
+        return drive_service.create_doc(title=title, initial_text=initial_text)
 
     @function_tool()
     async def append_to_doc(
@@ -176,7 +200,8 @@ class WorkspaceAgent(Agent):
         text: str
     ) -> dict[str, Any]:
         """Append plain text to the end of a Google Doc by ID."""
-        return self.drive_service.append_to_doc(doc_id=doc_id, text=text)
+        drive_service = self._get_user_service(context, 'drive_service')
+        return drive_service.append_to_doc(doc_id=doc_id, text=text)
 
     # Contact Tools (placeholder - would need People API implementation)
     @function_tool()

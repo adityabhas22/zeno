@@ -15,7 +15,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from agents.core.zeno_agent import entrypoint
+from agents.core.web_entrypoint import web_entrypoint
 from config.settings import get_settings
 
 
@@ -64,7 +64,7 @@ def check_credentials():
 
 def main():
     """Run the Zeno voice agent."""
-    print("🤖 Starting Zeno Voice Agent...")
+    print("🤖 Starting Zeno Smart Worker (web/telephony routing)...")
     print("=" * 50)
     
     # Check environment
@@ -87,9 +87,9 @@ def main():
     print("\n" + "=" * 50)
     
     try:
-        # Run the agent using LiveKit's CLI
+        # Run the smart entrypoint using LiveKit's CLI
         from livekit import agents
-        agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+        agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=web_entrypoint))
         
     except KeyboardInterrupt:
         print("\n👋 Zeno voice agent stopped by user")

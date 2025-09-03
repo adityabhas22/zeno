@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Optional, Dict, Any
 
 from .oauth import get_service
+from .user_oauth import get_user_service, check_user_has_google_access
 
 DOCS_SCOPES = [
     "https://www.googleapis.com/auth/documents",
@@ -21,9 +22,29 @@ DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 class DriveService:
     """Google Drive and Docs service with Zeno-specific enhancements."""
     
-    def __init__(self):
-        self.docs_service = get_service("docs", "v1", DOCS_SCOPES)
-        self.drive_service = get_service("drive", "v3", DRIVE_SCOPES)
+    def __init__(self, user_id: Optional[str] = None):
+        """
+        Initialize Drive service.
+        
+        Args:
+            user_id: If provided, use user-specific credentials. 
+                    If None, falls back to global credentials.
+        """
+        self.user_id = user_id
+        
+        if user_id:
+            if not check_user_has_google_access(user_id, DOCS_SCOPES):
+                raise Exception(
+                    f"User {user_id} has not connected their Google account or missing Drive/Docs permissions. "
+                    "Please connect your Google account in settings."
+                )
+            self.docs_service = get_user_service(user_id, "docs", "v1", DOCS_SCOPES)
+            self.drive_service = get_user_service(user_id, "drive", "v3", DRIVE_SCOPES)
+        else:
+            # Enforce user-scoped credentials only
+            raise RuntimeError(
+                "Google Drive/Docs require user-scoped credentials. No user context provided."
+            )
     
     def create_doc(
         self, 
